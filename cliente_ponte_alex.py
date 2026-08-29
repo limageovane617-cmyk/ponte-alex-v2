@@ -29,7 +29,7 @@ import urllib.parse
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-DEFAULT_PONTE_URL = "https://ais-dev-kdxgfj5ru6w7qfjxrfmcsz-654967506479.us-west2.run.app"
+DEFAULT_PONTE_URL = "https://ponte-alex-v2.dockhosting.dev"
 
 class ErroPonteAlex(Exception):
     """Exceção base para erros de comunicação ou processamento na Ponte Alex v2."""
