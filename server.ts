@@ -238,6 +238,50 @@ except Exception as e:
       }
     }
 
+    // Pattern: Alterar valor de variável
+    // Exemplo: "Altere somente o valor da variável numero de 10 para 50."
+    const variableValuePattern =
+      /(?:alterar|mudar|trocar|substituir)\s+(?:somente\s+)?(?:o\s+)?valor\s+da\s+vari[áa]vel\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+de\s+(-?\d+(?:\.\d+)?)\s+para\s+(-?\d+(?:\.\d+)?)/i;
+
+    const variableValueMatch = instruction.match(variableValuePattern);
+
+    if (variableValueMatch && replacedCount === 0 && !searchTarget) {
+      const variableName = variableValueMatch[1];
+      const fromValue = variableValueMatch[2];
+      const toValue = variableValueMatch[3];
+
+      const lines = modified.split('\n');
+
+      const assignmentPattern = new RegExp(
+        '^(\\s*' + variableName + '\\s*=\\s*)' + fromValue + '(\\s*(?:#.*)?)$'
+      );
+
+      let variableChanged = false;
+
+      for (let i = 0; i < lines.length; i++) {
+        if (assignmentPattern.test(lines[i])) {
+          lines[i] = lines[i].replace(
+            assignmentPattern,
+            '$1' + toValue + '$2'
+          );
+          variableChanged = true;
+          break;
+        }
+      }
+
+      if (variableChanged) {
+        modified = lines.join('\n');
+        summaryParts.push(
+          `Valor da variável '${variableName}' alterado de ${fromValue} para ${toValue}`
+        );
+        replacedCount++;
+      } else {
+        summaryParts.push(
+          `Aviso: variável '${variableName}' com valor ${fromValue} não foi encontrada para alteração.`
+        );
+      }
+    }
+
     // Pattern: Adicionar função / criar função
     const funcPattern = /(?:adicionar|criar)\s+fun[çc][ãa]o\s+([a-zA-Z0-9_]+)\s*[:(]?([\s\S]*)/i;
     const funcMatch = instruction.match(funcPattern);
