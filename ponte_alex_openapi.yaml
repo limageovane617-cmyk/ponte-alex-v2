@@ -1,0 +1,614 @@
+openapi: 3.0.3
+info:
+  title: "Ponte Alex v2 API"
+  description: |
+    API HTTP segura e isolada da Ponte Alex v2 para integração externa.
+    Permite envio de arquivos Python em tempo de execução, preservação de cópia original intacta,
+    transformação orientada a instruções, validação de sintaxe, execução real no interpretador Python 3
+    e download do arquivo processado resultante.
+  version: "2.0.0"
+  contact:
+    name: "Suporte Ponte Alex v2"
+    email: "limageovane617@gmail.com"
+
+servers:
+  - url: "https://ais-dev-kdxgfj5ru6w7qfjxrfmcsz-654967506479.us-west2.run.app"
+    description: "Servidor de Desenvolvimento (HTTPS Cloud Run)"
+  - url: "https://ais-pre-kdxgfj5ru6w7qfjxrfmcsz-654967506479.us-west2.run.app"
+    description: "Servidor de Pré-visualização / Compartilhado (HTTPS Cloud Run)"
+  - url: "http://localhost:3000"
+    description: "Servidor Local (Desenvolvimento)"
+  - url: "/"
+    description: "URL Relativa do Servidor Atual"
+
+paths:
+  /api/ponte/v2/ping:
+    get:
+      summary: "Verificação de status e saúde da API (Ping)"
+      description: |
+        Endpoint de health check público que retorna JSON simples confirmando
+        que a Ponte Alex v2 está online, o status do runtime Python e a configuração de segurança.
+      operationId: "getPonteV2Ping"
+      tags:
+        - "Saúde e Status"
+      responses:
+        '200':
+          description: "API online e operacional."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PingResponse'
+              example:
+                status: "online"
+                ponte: "Ponte Alex v2"
+                version: "2.0.0"
+                authConfigured: true
+                authHeaderName: "x-api-secret"
+                pythonRuntime: "Python 3.10.12"
+                timestamp: 1787968311589
+                uptimeSeconds: 120
+                message: "Ponte Alex v2 online e preparada para integração externa segura via HTTPS."
+                security:
+                  isolatedStorage: true
+                  directoryTraversalProtected: true
+                  externalApiFree: true
+                  apiKeysRequired: false
+                  overwriteOriginalProtected: true
+                  authConfigured: true
+                endpoints:
+                  ping: "GET /api/ponte/v2/ping"
+                  processar: "POST /api/ponte/v2/processar"
+                  history: "GET /api/ponte/history"
+                  downloadProcessed: "GET /api/download/processed/:filename"
+                  downloadOriginal: "GET /api/download/originals/:filename"
+
+  /api/ponte/v2/processar:
+    post:
+      summary: "Processamento, transformação e execução de script Python"
+      description: |
+        Recebe o conteúdo de um arquivo Python (fileContent), salva uma cópia original
+        imutável no storage isolado, aplica as instruções de alteração, valida a sintaxe,
+        executa o código gerado no interpretador Python e retorna o resultado estruturado
+        junto ao link para download do novo arquivo gerado.
+        
+        Exige autenticação via cabeçalho x-api-secret quando configurado no ambiente.
+      operationId: "processarScriptPythonV2"
+      tags:
+        - "Processamento e Execução"
+      security:
+        - ApiKeyAuth: []
+        - BearerAuth: []
+        - {}
+      requestBody:
+        description: "Dados do script Python, instrução de alteração e opções de saída."
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessarRequest'
+            example:
+              filename: "meu_modulo.py"
+              outputFilename: "modulo_processado_v2.py"
+              instruction: "Substituir '[STATUS: PENDENTE]' por '[STATUS: PONTE ALEX v2 OPERACIONAL]'"
+              fileContent: "def test_funcao():\n    mensagem = '[STATUS: PENDENTE]'\n    print(f'Resultado da validacao: {mensagem}')\n    return 0\n\nif __name__ == '__main__':\n    exit_val = test_funcao()\n"
+      responses:
+        '200':
+          description: "Arquivo processado e executado com sucesso no Python."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessarResponseSuccess'
+              example:
+                success: true
+                ponteVersion: "v2"
+                status: "TESTE_APROVADO"
+                testPassed: true
+                testMessage: "✅ Teste de execução Python concluído com sucesso (Exit Code 0)."
+                compileCheck:
+                  passed: true
+                  message: "Sintaxe Python OK"
+                execution:
+                  exitCode: 0
+                  stdout: "Resultado da validacao: [STATUS: PONTE ALEX v2 OPERACIONAL]\n"
+                  stderr: ""
+                  durationMs: 65
+                originalFile:
+                  filename: "meu_modulo_original_1787968311589.py"
+                  size: 174
+                  lines: 8
+                  sha256: "7943166c3e2780e5c41a9c8dadcbcea5896dd6e617589420e7e89e9e57ee1a3b"
+                  savedPath: "storage/originals/meu_modulo_original_1787968311589.py"
+                  untouched: true
+                processedFile:
+                  filename: "modulo_processado_v2.py"
+                  size: 191
+                  lines: 8
+                  sha256: "970d2a944380bbb6dd945a0095903260c7bf29aa86d8695df751a9983edf93e5"
+                  content: "def test_funcao():\n    mensagem = '[STATUS: PONTE ALEX v2 OPERACIONAL]'\n    print(f'Resultado da validacao: {mensagem}')\n    return 0\n\nif __name__ == '__main__':\n    exit_val = test_funcao()\n"
+                  downloadUrl: "/api/download/processed/modulo_processado_v2.py"
+                instruction: "Substituir '[STATUS: PENDENTE]' por '[STATUS: PONTE ALEX v2 OPERACIONAL]'"
+                transformSummary: "Substituído '[STATUS: PENDENTE]' por '[STATUS: PONTE ALEX v2 OPERACIONAL]'"
+                neverOverwritten: true
+                timestamp: 1787968311589
+        '400':
+          description: "Requisição inválida ou erro de sintaxe Python no código gerado."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessarResponseBadRequest'
+              example:
+                success: false
+                ponteVersion: "v2"
+                status: "ERRO_SINTAXE_PYTHON"
+                testPassed: false
+                testMessage: "Erro de sintaxe no código Python gerado."
+                compileCheck:
+                  passed: false
+                  error: "SyntaxError: invalid syntax (line 4)"
+                originalFile:
+                  filename: "script_original_1787968311589.py"
+                  size: 120
+                  lines: 6
+                  sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                  savedPath: "storage/originals/script_original_1787968311589.py"
+                  untouched: true
+                processedFile:
+                  filename: "script_processado.py"
+                  size: 125
+                  lines: 6
+                  sha256: "ca978112ca1bbdcafac231b39a23dc4da7860814197343a6f110fce91410f29e"
+                  content: "def erro:\n"
+                  downloadUrl: "/api/download/processed/script_processado.py"
+                error: "SyntaxError: invalid syntax"
+        '401':
+          description: "Acesso não autorizado. Segredo ausente ou inválido."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseUnauthorized'
+              example:
+                success: false
+                ponteVersion: "v2"
+                status: "NAO_AUTORIZADO"
+                testPassed: false
+                error: "Acesso não autorizado: Segredo de autenticação ausente ou inválido. Forneça o segredo correto no header x-api-secret ou Authorization: Bearer <SEU_SEGREDO>."
+                authRequired: true
+                authHeaderName: "x-api-secret"
+        '500':
+          description: "Erro interno no servidor durante o processamento."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponseInternal'
+              example:
+                success: false
+                ponteVersion: "v2"
+                error: "Erro ao processar requisição na Ponte Alex v2: Falha no sistema de arquivos."
+
+  /api/download/processed/{filename}:
+    get:
+      summary: "Download do arquivo Python processado"
+      description: |
+        Retorna e realiza o download direto do arquivo Python resultante do processamento,
+        com cabeçalho Content-Disposition para anexo.
+      operationId: "downloadArquivoProcessado"
+      tags:
+        - "Download de Arquivos"
+      parameters:
+        - name: "filename"
+          in: "path"
+          required: true
+          description: "Nome do arquivo processado gerado (ex: modulo_processado_v2.py)."
+          schema:
+            type: "string"
+            example: "modulo_processado_v2.py"
+      responses:
+        '200':
+          description: "Arquivo Python para download."
+          headers:
+            Content-Disposition:
+              schema:
+                type: "string"
+                example: "attachment; filename=\"modulo_processado_v2.py\""
+            Content-Type:
+              schema:
+                type: "string"
+                example: "application/octet-stream"
+          content:
+            application/octet-stream:
+              schema:
+                type: "string"
+                format: "binary"
+            text/x-python:
+              schema:
+                type: "string"
+                format: "binary"
+        '404':
+          description: "Arquivo processado não encontrado no storage."
+          content:
+            text/plain:
+              schema:
+                type: "string"
+                example: "Arquivo processado não encontrado."
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: "apiKey"
+      in: "header"
+      name: "x-api-secret"
+      description: |
+        Segredo de autenticação configurado na variável de ambiente PONTE_API_SECRET
+        do sistema de Secrets do ambiente.
+    BearerAuth:
+      type: "http"
+      scheme: "bearer"
+      description: |
+        Autenticação alternativa via cabeçalho HTTP padrão Authorization: Bearer <SEGREDO>.
+
+  schemas:
+    PingResponse:
+      type: "object"
+      required:
+        - "status"
+        - "ponte"
+        - "version"
+        - "message"
+        - "timestamp"
+        - "uptimeSeconds"
+      properties:
+        status:
+          type: "string"
+          description: "Estado atual da API."
+          example: "online"
+        ponte:
+          type: "string"
+          description: "Nome da aplicação."
+          example: "Ponte Alex v2"
+        version:
+          type: "string"
+          description: "Versão da API."
+          example: "2.0.0"
+        authConfigured:
+          type: "boolean"
+          description: "Indica se a autenticação via PONTE_API_SECRET está ativa no ambiente."
+          example: true
+        authHeaderName:
+          type: "string"
+          description: "Nome do cabeçalho HTTP esperado para autenticação."
+          example: "x-api-secret"
+        pythonRuntime:
+          type: "string"
+          description: "Versão do interpretador Python disponível no container."
+          example: "Python 3.10.12"
+        timestamp:
+          type: "integer"
+          format: "int64"
+          description: "Timestamp Unix da resposta em milissegundos."
+          example: 1787968311589
+        uptimeSeconds:
+          type: "integer"
+          description: "Tempo de atividade do servidor em segundos."
+          example: 120
+        message:
+          type: "string"
+          description: "Mensagem de confirmação da API."
+          example: "Ponte Alex v2 online e preparada para integração externa segura via HTTPS."
+        security:
+          type: "object"
+          properties:
+            isolatedStorage:
+              type: "boolean"
+              example: true
+            directoryTraversalProtected:
+              type: "boolean"
+              example: true
+            externalApiFree:
+              type: "boolean"
+              example: true
+            apiKeysRequired:
+              type: "boolean"
+              example: false
+            overwriteOriginalProtected:
+              type: "boolean"
+              example: true
+            authConfigured:
+              type: "boolean"
+              example: true
+        endpoints:
+          type: "object"
+          additionalProperties:
+            type: "string"
+
+    ProcessarRequest:
+      type: "object"
+      required:
+        - "fileContent"
+      properties:
+        filename:
+          type: "string"
+          description: "Nome de referência do arquivo de entrada original."
+          example: "meu_modulo.py"
+        outputFilename:
+          type: "string"
+          description: "Nome customizado desejado para o arquivo de saída processado."
+          example: "modulo_processado_v2.py"
+        instruction:
+          type: "string"
+          description: "Instrução em linguagem natural ou regra de substituição a ser aplicada."
+          example: "Substituir '[STATUS: PENDENTE]' por '[STATUS: PONTE ALEX v2 OPERACIONAL]'"
+        fileContent:
+          type: "string"
+          description: "Conteúdo textual completo em código Python a ser processado."
+          example: "def test_funcao():\n    mensagem = '[STATUS: PENDENTE]'\n    print(f'Resultado: {mensagem}')\n    return 0\nif __name__ == '__main__':\n    test_funcao()\n"
+        searchTarget:
+          type: "string"
+          description: "Trecho exato a ser localizado para substituição direta (opcional)."
+          example: "[STATUS: PENDENTE]"
+        replaceWith:
+          type: "string"
+          description: "Trecho substituto (opcional)."
+          example: "[STATUS: PONTE ALEX v2 OPERACIONAL]"
+
+    ProcessarResponseSuccess:
+      type: "object"
+      required:
+        - "success"
+        - "ponteVersion"
+        - "status"
+        - "testPassed"
+        - "testMessage"
+        - "compileCheck"
+        - "execution"
+        - "originalFile"
+        - "processedFile"
+        - "instruction"
+        - "transformSummary"
+        - "neverOverwritten"
+        - "timestamp"
+      properties:
+        success:
+          type: "boolean"
+          description: "Indica se a operação foi executada com sucesso."
+          example: true
+        ponteVersion:
+          type: "string"
+          description: "Versão da ponte executada."
+          example: "v2"
+        status:
+          type: "string"
+          description: "Status descritivo do teste."
+          example: "TESTE_APROVADO"
+        testPassed:
+          type: "boolean"
+          description: "Booleano indicando se o teste em Python passou com Exit Code 0."
+          example: true
+        testMessage:
+          type: "string"
+          description: "Resumo descritivo do resultado do teste."
+          example: "✅ Teste de execução Python concluído com sucesso (Exit Code 0)."
+        compileCheck:
+          $ref: '#/components/schemas/CompileCheck'
+        execution:
+          $ref: '#/components/schemas/PythonExecution'
+        originalFile:
+          $ref: '#/components/schemas/OriginalFileDetails'
+        processedFile:
+          $ref: '#/components/schemas/ProcessedFileDetails'
+        instruction:
+          type: "string"
+          description: "Instrução aplicada."
+          example: "Substituir '[STATUS: PENDENTE]' por '[STATUS: PONTE ALEX v2 OPERACIONAL]'"
+        transformSummary:
+          type: "string"
+          description: "Resumo da transformação de código aplicada."
+          example: "Substituído '[STATUS: PENDENTE]' por '[STATUS: PONTE ALEX v2 OPERACIONAL]'"
+        neverOverwritten:
+          type: "boolean"
+          description: "Confirma que o arquivo original jamais foi sobrescrito."
+          example: true
+        timestamp:
+          type: "integer"
+          format: "int64"
+          description: "Timestamp Unix da operação em milissegundos."
+          example: 1787968311589
+
+    ProcessarResponseBadRequest:
+      type: "object"
+      required:
+        - "success"
+        - "ponteVersion"
+        - "status"
+        - "testPassed"
+        - "testMessage"
+        - "compileCheck"
+        - "originalFile"
+        - "processedFile"
+      properties:
+        success:
+          type: "boolean"
+          example: false
+        ponteVersion:
+          type: "string"
+          example: "v2"
+        status:
+          type: "string"
+          example: "ERRO_SINTAXE_PYTHON"
+        testPassed:
+          type: "boolean"
+          example: false
+        testMessage:
+          type: "string"
+          example: "Erro de sintaxe no código Python gerado."
+        compileCheck:
+          $ref: '#/components/schemas/CompileCheck'
+        originalFile:
+          $ref: '#/components/schemas/OriginalFileDetails'
+        processedFile:
+          $ref: '#/components/schemas/ProcessedFileDetails'
+        error:
+          type: "string"
+          example: "SyntaxError: invalid syntax"
+
+    ErrorResponseUnauthorized:
+      type: "object"
+      required:
+        - "success"
+        - "ponteVersion"
+        - "status"
+        - "testPassed"
+        - "error"
+        - "authRequired"
+        - "authHeaderName"
+      properties:
+        success:
+          type: "boolean"
+          example: false
+        ponteVersion:
+          type: "string"
+          example: "v2"
+        status:
+          type: "string"
+          example: "NAO_AUTORIZADO"
+        testPassed:
+          type: "boolean"
+          example: false
+        error:
+          type: "string"
+          example: "Acesso não autorizado: Segredo de autenticação ausente ou inválido. Forneça o segredo correto no header x-api-secret ou Authorization: Bearer <SEU_SEGREDO>."
+        authRequired:
+          type: "boolean"
+          example: true
+        authHeaderName:
+          type: "string"
+          example: "x-api-secret"
+
+    ErrorResponseInternal:
+      type: "object"
+      required:
+        - "success"
+        - "ponteVersion"
+        - "error"
+      properties:
+        success:
+          type: "boolean"
+          example: false
+        ponteVersion:
+          type: "string"
+          example: "v2"
+        error:
+          type: "string"
+          example: "Erro ao processar requisição na Ponte Alex v2: Falha no sistema de arquivos."
+
+    PythonExecution:
+      type: "object"
+      required:
+        - "exitCode"
+        - "stdout"
+        - "stderr"
+        - "durationMs"
+      properties:
+        exitCode:
+          type: "integer"
+          description: "Código de saída do processo Python (0 para sucesso)."
+          example: 0
+        stdout:
+          type: "string"
+          description: "Saída padrão gerada pela execução do script Python."
+          example: "Resultado da validacao: [STATUS: PONTE ALEX v2 OPERACIONAL]\n"
+        stderr:
+          type: "string"
+          description: "Saída de erro gerada caso o script lance exceções não tratadas."
+          example: ""
+        durationMs:
+          type: "integer"
+          description: "Duração da execução do processo Python em milissegundos."
+          example: 65
+
+    OriginalFileDetails:
+      type: "object"
+      required:
+        - "filename"
+        - "size"
+        - "lines"
+        - "sha256"
+        - "savedPath"
+        - "untouched"
+      properties:
+        filename:
+          type: "string"
+          description: "Nome do arquivo original gravado em storage isolado."
+          example: "meu_modulo_original_1787968311589.py"
+        size:
+          type: "integer"
+          description: "Tamanho do arquivo original em bytes."
+          example: 174
+        lines:
+          type: "integer"
+          description: "Quantidade total de linhas do arquivo original."
+          example: 8
+        sha256:
+          type: "string"
+          description: "Hash criptográfico SHA-256 do arquivo original para integridade."
+          example: "7943166c3e2780e5c41a9c8dadcbcea5896dd6e617589420e7e89e9e57ee1a3b"
+        savedPath:
+          type: "string"
+          description: "Caminho de armazenamento isolado do arquivo original."
+          example: "storage/originals/meu_modulo_original_1787968311589.py"
+        untouched:
+          type: "boolean"
+          description: "Confirma que o original permanece 100% intocado."
+          example: true
+
+    ProcessedFileDetails:
+      type: "object"
+      required:
+        - "filename"
+        - "size"
+        - "lines"
+        - "sha256"
+        - "content"
+        - "downloadUrl"
+      properties:
+        filename:
+          type: "string"
+          description: "Nome do arquivo processado gerado."
+          example: "modulo_processado_v2.py"
+        size:
+          type: "integer"
+          description: "Tamanho do arquivo gerado em bytes."
+          example: 191
+        lines:
+          type: "integer"
+          description: "Quantidade de linhas do arquivo gerado."
+          example: 8
+        sha256:
+          type: "string"
+          description: "Hash criptográfico SHA-256 do arquivo gerado."
+          example: "970d2a944380bbb6dd945a0095903260c7bf29aa86d8695df751a9983edf93e5"
+        content:
+          type: "string"
+          description: "Conteúdo de código final do arquivo gerado."
+          example: "def test_funcao():\n    mensagem = '[STATUS: PONTE ALEX v2 OPERACIONAL]'\n    print(f'Resultado da validacao: {mensagem}')\n    return 0\n\nif __name__ == '__main__':\n    exit_val = test_funcao()\n"
+        downloadUrl:
+          type: "string"
+          description: "URL relativa para download direto do arquivo gerado."
+          example: "/api/download/processed/modulo_processado_v2.py"
+
+    CompileCheck:
+      type: "object"
+      required:
+        - "passed"
+      properties:
+        passed:
+          type: "boolean"
+          description: "Indica se a checagem de sintaxe passou no compilador Python."
+          example: true
+        message:
+          type: "string"
+          description: "Mensagem de validação de compilação."
+          example: "Sintaxe Python OK"
+        error:
+          type: "string"
+          description: "Mensagem de erro de compilação caso a validação falhe."
+          example: "SyntaxError: invalid syntax"

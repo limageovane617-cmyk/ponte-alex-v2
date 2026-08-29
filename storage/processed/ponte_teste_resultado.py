@@ -1,0 +1,1 @@
+print("PONTE_ALEX_COMUNICACAO_OK")
