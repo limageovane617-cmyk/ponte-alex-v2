@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
-import { execFile } from 'child_process';
+import { exec } from 'child_process';
 import { createServer as createViteServer } from 'vite';
 import os from 'os';
 
@@ -11,12 +11,9 @@ async function startServer() {
   const PORT = Number(process.env.PORT || 3000);
 
   // ============================================================
-  // CONFIGURAÇÃO GERAL
+  // CORS
   // ============================================================
 
-  app.disable('x-powered-by');
-
-  // CORS
   app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header(
@@ -35,50 +32,34 @@ async function startServer() {
     next();
   });
 
-  // Limite máximo do JSON recebido.
+  // ============================================================
+  // JSON BODY
+  // ============================================================
+
   app.use(express.json({ limit: '50mb' }));
 
   // ============================================================
-  // DIRETÓRIOS DA PONTE
+  // DIRETÓRIOS
   // ============================================================
 
-  const storageDir = path.join(process.cwd(), 'storage');
-  const originalsDir = path.join(storageDir, 'originals');
-  const processedDir = path.join(storageDir, 'processed');
+  const originalsDir = path.join(
+    process.cwd(),
+    'storage',
+    'originals'
+  );
 
-  fs.mkdirSync(storageDir, { recursive: true });
+  const processedDir = path.join(
+    process.cwd(),
+    'storage',
+    'processed'
+  );
+
   fs.mkdirSync(originalsDir, { recursive: true });
   fs.mkdirSync(processedDir, { recursive: true });
 
   // ============================================================
-  // CONFIGURAÇÕES DE SEGURANÇA
+  // HELPERS
   // ============================================================
-
-  const PYTHON_COMMAND = process.env.PYTHON_COMMAND || 'python3';
-
-  const COMPILE_TIMEOUT_MS = 8_000;
-  const EXECUTION_TIMEOUT_MS = 10_000;
-
-  // ============================================================
-  // UTILITÁRIOS
-  // ============================================================
-
-  function formatBytes(bytes: number): string {
-    if (!Number.isFinite(bytes) || bytes < 0) {
-      return '0 B';
-    }
-
-    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    let size = bytes;
-    let index = 0;
-
-    while (size >= 1024 && index < units.length - 1) {
-      size /= 1024;
-      index++;
-    }
-
-    return `${size.toFixed(2)} ${units[index]}`;
-  }
 
   function calculateDirectorySize(
     dirPath: string
@@ -97,24 +78,24 @@ async function startServer() {
         };
       }
 
-      const entries = fs.readdirSync(dirPath);
+      const files = fs.readdirSync(dirPath);
 
-      for (const entry of entries) {
-        const fullPath = path.join(dirPath, entry);
+      for (const file of files) {
+        const filePath = path.join(dirPath, file);
 
         try {
-          const stat = fs.statSync(fullPath);
+          const stat = fs.statSync(filePath);
 
           if (stat.isFile()) {
             totalSize += stat.size;
             fileCount++;
           }
         } catch {
-          // Ignora arquivos que não puderem ser lidos.
+          // Ignora arquivos inacessíveis.
         }
       }
     } catch {
-      // Retorna zero caso o diretório não possa ser lido.
+      // Retorna zero em caso de erro.
     }
 
     return {
@@ -127,64 +108,55 @@ async function startServer() {
     rss: number;
     heapUsed: number;
     heapTotal: number;
-    external: number;
-    arrayBuffers: number;
   } {
-    const memory = process.memoryUsage();
+    const memUsage = process.memoryUsage();
 
     return {
-      rss: memory.rss,
-      heapUsed: memory.heapUsed,
-      heapTotal: memory.heapTotal,
-      external: memory.external,
-      arrayBuffers: memory.arrayBuffers,
+      rss: memUsage.rss,
+      heapUsed: memUsage.heapUsed,
+      heapTotal: memUsage.heapTotal,
     };
   }
 
-  function getSystemMemoryInfo() {
-    const totalBytes = os.totalmem();
-    const availableBytes = os.freemem();
-    const usedBytes = Math.max(0, totalBytes - availableBytes);
+  function getSystemMemoryInfo(): {
+    totalBytes: number;
+    usedBytes: number;
+    availableBytes: number;
+    usagePercentage: number;
+  } {
+    const totalMemory = os.totalmem();
+    const freeMemory = os.freemem();
+    const usedMemory = totalMemory - freeMemory;
 
     return {
-      totalBytes,
-      usedBytes,
-      availableBytes,
+      totalBytes: totalMemory,
+      usedBytes: usedMemory,
+      availableBytes: freeMemory,
       usagePercentage:
-        totalBytes > 0
-          ? Number(((usedBytes / totalBytes) * 100).toFixed(2))
+        totalMemory > 0
+          ? Number(((usedMemory / totalMemory) * 100).toFixed(2))
           : 0,
-      totalFormatted: formatBytes(totalBytes),
-      usedFormatted: formatBytes(usedBytes),
-      availableFormatted: formatBytes(availableBytes),
     };
   }
 
-  function getDiskInfo() {
-    /*
-     * Node.js não possui uma API portátil simples para obter
-     * espaço de disco em todos os ambientes.
-     *
-     * Portanto, aqui informamos o tamanho dos arquivos armazenados
-     * pela Ponte, sem fingir que isso representa o disco inteiro.
-     */
-    const originals = calculateDirectorySize(originalsDir);
-    const processed = calculateDirectorySize(processedDir);
+  function formatBytes(bytes: number): string {
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
 
-    const bridgeUsedBytes =
-      originals.totalSize + processed.totalSize;
+    let size = bytes;
+    let unitIndex = 0;
 
-    return {
-      bridgeStorageBytes: bridgeUsedBytes,
-      bridgeStorageFormatted: formatBytes(bridgeUsedBytes),
-      originalsBytes: originals.totalSize,
-      originalsFormatted: formatBytes(originals.totalSize),
-      processedBytes: processed.totalSize,
-      processedFormatted: formatBytes(processed.totalSize),
-    };
+    while (
+      size >= 1024 &&
+      unitIndex < units.length - 1
+    ) {
+      size /= 1024;
+      unitIndex++;
+    }
+
+    return `${size.toFixed(2)} ${units[unitIndex]}`;
   }
 
-  function sha256(content: string): string {
+  function calculateSha256(content: string): string {
     return crypto
       .createHash('sha256')
       .update(content, 'utf8')
@@ -193,7 +165,10 @@ async function startServer() {
 
   function getFileStats(filename: string) {
     const safeFilename = path.basename(filename);
-    const filePath = path.join(process.cwd(), safeFilename);
+    const filePath = path.join(
+      process.cwd(),
+      safeFilename
+    );
 
     if (!fs.existsSync(filePath)) {
       return {
@@ -204,36 +179,46 @@ async function startServer() {
     }
 
     const stats = fs.statSync(filePath);
-    const content = fs.readFileSync(filePath, 'utf8');
+    const content = fs.readFileSync(
+      filePath,
+      'utf8'
+    );
+
+    const hash = calculateSha256(content);
+    const lines = content.split('\n').length;
 
     return {
       exists: true,
       filename: safeFilename,
       filePath,
       size: stats.size,
-      lines: content.split('\n').length,
-      sha256: sha256(content),
+      lines,
+      sha256: hash,
       modifiedAt: stats.mtime.toISOString(),
       content,
     };
   }
 
   function sanitizeSafePythonFilename(
-    rawName: unknown,
+    rawName: string,
     fallbackPrefix: string
   ): string {
-    const value =
+    const input =
       typeof rawName === 'string'
-        ? rawName.trim()
+        ? rawName
         : '';
 
-    const basename = path.basename(value);
+    const base = path
+      .basename(input)
+      .replace(/[^a-zA-Z0-9._-]/g, '_');
 
-    let clean = basename
-      .replace(/[^a-zA-Z0-9._-]/g, '_')
-      .replace(/^\.+/, '');
+    let clean = base.replace(/^\.+/, '');
 
-    if (!clean || clean === '.py') {
+    if (
+      !clean ||
+      clean === '.py' ||
+      clean === '_'
+    ) {
       clean = `${fallbackPrefix}_${Date.now()}.py`;
     }
 
@@ -244,43 +229,44 @@ async function startServer() {
     return clean;
   }
 
-  function getConfiguredSecret(): string {
-    return (
-      process.env.PONTE_API_SECRET ||
-      process.env.ALEX_BRIDGE_SECRET ||
-      ''
-    ).trim();
-  }
-
   function extractProvidedSecret(
     req: express.Request
   ): string | null {
-    const headerSecret = req.headers['x-api-secret'];
+    const headerSecret =
+      req.headers['x-api-secret'];
 
     if (
+      headerSecret &&
       typeof headerSecret === 'string' &&
       headerSecret.trim()
     ) {
       return headerSecret.trim();
     }
 
-    const authorization = req.headers.authorization;
+    const authHeader =
+      req.headers['authorization'];
 
-    if (typeof authorization === 'string') {
-      const value = authorization.trim();
-
-      if (value.toLowerCase().startsWith('bearer ')) {
-        return value.substring(7).trim();
+    if (
+      authHeader &&
+      typeof authHeader === 'string'
+    ) {
+      if (
+        authHeader
+          .toLowerCase()
+          .startsWith('bearer ')
+      ) {
+        return authHeader
+          .substring(7)
+          .trim();
       }
 
-      if (value) {
-        return value;
-      }
+      return authHeader.trim();
     }
 
     const querySecret = req.query.secret;
 
     if (
+      querySecret &&
       typeof querySecret === 'string' &&
       querySecret.trim()
     ) {
@@ -290,6 +276,7 @@ async function startServer() {
     const bodySecret = req.body?.secret;
 
     if (
+      bodySecret &&
       typeof bodySecret === 'string' &&
       bodySecret.trim()
     ) {
@@ -299,374 +286,67 @@ async function startServer() {
     return null;
   }
 
-  function requireAuthentication(
-    req: express.Request,
-    res: express.Response
-  ): boolean {
-    const configuredSecret = getConfiguredSecret();
-
-    /*
-     * Endpoints capazes de executar Python NÃO funcionam
-     * sem Secret configurado.
-     */
-    if (!configuredSecret) {
-      res.status(503).json({
-        success: false,
-        ponteVersion: 'v2',
-        status: 'AUTHENTICATION_NOT_CONFIGURED',
-        error:
-          'A Ponte Alex v2 está protegida: configure PONTE_API_SECRET ou ALEX_BRIDGE_SECRET antes de executar arquivos.',
-        authRequired: true,
-        authHeaderName: 'x-api-secret',
-      });
-
-      return false;
-    }
-
-    const providedSecret = extractProvidedSecret(req);
-
-    if (!providedSecret || providedSecret !== configuredSecret) {
-      res.status(401).json({
-        success: false,
-        ponteVersion: 'v2',
-        status: 'NAO_AUTORIZADO',
-        testPassed: false,
-        error:
-          'Acesso não autorizado. Forneça o segredo correto no header x-api-secret ou Authorization: Bearer <SEU_SEGREDO>.',
-        authRequired: true,
-        authHeaderName: 'x-api-secret',
-      });
-
-      return false;
-    }
-
-    return true;
+  function getSystemConfiguredSecret(): string {
+    return (
+      process.env.PONTE_API_SECRET ||
+      process.env.ALEX_BRIDGE_SECRET ||
+      ''
+    ).trim();
   }
 
-  function isSafeStoredPythonFilename(
-    filename: unknown
-  ): filename is string {
-    if (typeof filename !== 'string') {
-      return false;
-    }
-
-    const clean = path.basename(filename);
+  function isInsideDirectory(
+    filePath: string,
+    directory: string
+  ): boolean {
+    const resolvedFile = path.resolve(filePath);
+    const resolvedDir =
+      path.resolve(directory) + path.sep;
 
     return (
-      clean === filename &&
-      clean.length > 0 &&
-      clean.toLowerCase().endsWith('.py') &&
-      !clean.includes('..')
+      resolvedFile.startsWith(resolvedDir)
     );
   }
 
-  // ============================================================
-  // TRANSFORMAÇÃO LOCAL DO PYTHON
-  // ============================================================
+  function getPythonCommand(): string {
+    return process.platform === 'win32'
+      ? 'python'
+      : 'python3';
+  }
 
-  function applyLocalTransformation(
-    originalContent: string,
-    instruction: string,
-    searchTarget?: unknown,
-    replaceWith?: unknown
-  ): {
-    newContent: string;
-    summary: string;
-  } {
-    let modified = originalContent;
-    const summaryParts: string[] = [];
-
-    // ----------------------------------------------------------
-    // 1. Substituição direta
-    // ----------------------------------------------------------
-
-    if (
-      typeof searchTarget === 'string' &&
-      searchTarget.length > 0 &&
-      typeof replaceWith === 'string'
-    ) {
-      if (modified.includes(searchTarget)) {
-        modified = modified.split(searchTarget).join(replaceWith);
-
-        summaryParts.push(
-          `Substituição exata de "${searchTarget}" por "${replaceWith}".`
-        );
-      } else {
-        summaryParts.push(
-          `Aviso: o alvo "${searchTarget}" não foi encontrado.`
-        );
-      }
-    }
-
-    // ----------------------------------------------------------
-    // 2. Substituir "X" por "Y"
-    // ----------------------------------------------------------
-
-    const replacePattern =
-      /(?:substituir|trocar|mudar|alterar|replace)\s+["'`]([^"'`]+)["'`]\s+(?:por|para|with)\s+["'`]([^"'`]+)["'`]/gi;
-
-    let match: RegExpExecArray | null;
-    let replacedCount = 0;
-
-    while ((match = replacePattern.exec(instruction)) !== null) {
-      const fromText = match[1];
-      const toText = match[2];
-
-      if (modified.includes(fromText)) {
-        modified = modified.split(fromText).join(toText);
-
-        summaryParts.push(
-          `Substituído "${fromText}" por "${toText}".`
-        );
-
-        replacedCount++;
-      } else {
-        summaryParts.push(
-          `Trecho "${fromText}" não localizado.`
-        );
-      }
-    }
-
-    // ----------------------------------------------------------
-    // 3. Alterar valor de variável
-    // ----------------------------------------------------------
-
-    const variableValuePattern =
-      /(?:alterar|mudar|trocar|substituir)\s+(?:somente\s+)?(?:o\s+)?valor\s+da\s+vari[áa]vel\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+de\s+(-?\d+(?:\.\d+)?)\s+para\s+(-?\d+(?:\.\d+)?)/i;
-
-    const variableValueMatch =
-      instruction.match(variableValuePattern);
-
-    if (
-      variableValueMatch &&
-      replacedCount === 0 &&
-      typeof searchTarget !== 'string'
-    ) {
-      const variableName = variableValueMatch[1];
-      const fromValue = variableValueMatch[2];
-      const toValue = variableValueMatch[3];
-
-      const lines = modified.split('\n');
-
-      const assignmentPattern = new RegExp(
-        `^(\\s*${variableName}\\s*=\\s*)${fromValue}(\\s*(?:#.*)?)$`
-      );
-
-      let variableChanged = false;
-
-      for (let i = 0; i < lines.length; i++) {
-        if (assignmentPattern.test(lines[i])) {
-          lines[i] = lines[i].replace(
-            assignmentPattern,
-            `$1${toValue}$2`
-          );
-
-          variableChanged = true;
-          break;
-        }
-      }
-
-      if (variableChanged) {
-        modified = lines.join('\n');
-
-        summaryParts.push(
-          `Valor da variável "${variableName}" alterado de ${fromValue} para ${toValue}.`
-        );
-      } else {
-        summaryParts.push(
-          `Aviso: variável "${variableName}" com valor ${fromValue} não encontrada.`
-        );
-      }
-    }
-
-    // ----------------------------------------------------------
-    // 4. Adicionar função
-    // ----------------------------------------------------------
-
-    const functionPattern =
-      /(?:adicionar|criar)\s+fun[çc][ãa]o\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*(?::|\()?([\s\S]*)/i;
-
-    const functionMatch =
-      instruction.match(functionPattern);
-
-    if (
-      functionMatch &&
-      replacedCount === 0 &&
-      typeof searchTarget !== 'string'
-    ) {
-      const functionName = functionMatch[1];
-      const functionDetails =
-        functionMatch[2]?.trim() ||
-        'Implementação automatizada';
-
-      const newFunctionCode = `
-
-def ${functionName}(*args, **kwargs):
-    """Função adicionada pela Ponte Alex v2.
-    
-    Instrução:
-    ${functionDetails.replace(/\*\//g, '')}
-    """
-    print("[Ponte Alex v2] Função ${functionName} executada.")
-`;
-
-      modified += newFunctionCode;
-
-      summaryParts.push(
-        `Nova função "def ${functionName}" adicionada.`
-      );
-    }
-
-    // ----------------------------------------------------------
-    // 5. Adicionar print
-    // ----------------------------------------------------------
-
-    const printPattern =
-      /(?:adicionar|inserir|colocar)\s+(?:print|mensagem|log)[:\s]+["'`]([^"'`]+)["'`]/i;
-
-    const printMatch =
-      instruction.match(printPattern);
-
-    if (
-      printMatch &&
-      replacedCount === 0 &&
-      typeof searchTarget !== 'string'
-    ) {
-      const message = printMatch[1].replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-
-      modified += `\n\nprint("${message}")\n`;
-
-      summaryParts.push(
-        `Comando print("${printMatch[1]}") adicionado.`
-      );
-    }
-
-    // ----------------------------------------------------------
-    // 6. Adicionar no início
-    // ----------------------------------------------------------
-
-    const prependPattern =
-      /(?:adicionar|inserir|prepend)\s+no\s+in[ií]cio[:\s]+([\s\S]+)/i;
-
-    const prependMatch =
-      instruction.match(prependPattern);
-
-    if (prependMatch) {
-      const code = prependMatch[1].trim();
-
-      if (code) {
-        modified = `${code}\n${modified}`;
-
-        summaryParts.push(
-          'Código adicionado ao início do arquivo.'
-        );
-      }
-    }
-
-    // ----------------------------------------------------------
-    // 7. Adicionar no final
-    // ----------------------------------------------------------
-
-    const appendPattern =
-      /(?:adicionar|inserir|append)\s+(?:no\s+final|ao\s+fim)[:\s]+([\s\S]+)/i;
-
-    const appendMatch =
-      instruction.match(appendPattern);
-
-    if (appendMatch) {
-      const code = appendMatch[1].trim();
-
-      if (code) {
-        modified += `\n\n${code}\n`;
-
-        summaryParts.push(
-          'Código adicionado ao final do arquivo.'
-        );
-      }
-    }
-
-    // ----------------------------------------------------------
-    // 8. Nenhum padrão reconhecido
-    // ----------------------------------------------------------
-
-    if (summaryParts.length === 0) {
-      const timestamp = new Date().toLocaleString('pt-BR');
-
-      const banner =
-        `# ========================================================\n` +
-        `# [PONTE ALEX v2] Registro de alteração\n` +
-        `# Instrução: ${instruction}\n` +
-        `# Data: ${timestamp}\n` +
-        `# ========================================================\n\n`;
-
-      if (
-        instruction.includes('\n') ||
-        instruction.includes('def ') ||
-        instruction.includes('print(') ||
-        instruction.includes('=')
-      ) {
-        modified =
-          banner +
-          modified +
-          `\n\n# --- Código anexado pela instrução ---\n` +
-          instruction +
-          '\n';
-
-        summaryParts.push(
-          'Instrução/código anexado ao arquivo.'
-        );
-      } else {
-        const safeInstruction = instruction
-          .replace(/\\/g, '\\\\')
-          .replace(/"/g, '\\"');
-
-        modified =
-          banner +
-          modified +
-          `\n\nprint("[Ponte Alex v2] Modificação registrada: ${safeInstruction}")\n`;
-
-        summaryParts.push(
-          'Instrução registrada e comando de validação inserido.'
-        );
-      }
-    }
-
-    return {
-      newContent: modified,
-      summary: summaryParts.join(' '),
-    };
+  function getShellSafePath(
+    filePath: string
+  ): string {
+    return `"${filePath.replace(/"/g, '\\"')}"`;
   }
 
   // ============================================================
-  // API DE STATUS DOS ARQUIVOS LEGADOS
+  // STATUS
   // ============================================================
 
-  app.get('/api/status', (_req, res) => {
-    try {
-      const original = getFileStats('app_teste.py');
-      const copia = getFileStats('app_teste_copia.py');
-      const testeAlex = getFileStats('teste_alex.py');
+  app.get('/api/status', (req, res) => {
+    const original =
+      getFileStats('app_teste.py');
 
-      const areIdentical =
-        original.exists &&
-        copia.exists &&
-        original.sha256 === copia.sha256;
+    const copia =
+      getFileStats('app_teste_copia.py');
 
-      return res.json({
-        success: true,
-        files: {
-          original,
-          copia,
-          testeAlex,
-        },
-        areIdentical,
-      });
-    } catch (error: any) {
-      return res.status(500).json({
-        success: false,
-        error: error?.message || 'Erro ao verificar arquivos.',
-      });
-    }
+    const testeAlex =
+      getFileStats('teste_alex.py');
+
+    const areIdentical =
+      original.exists &&
+      copia.exists &&
+      original.sha256 === copia.sha256;
+
+    return res.json({
+      success: true,
+      files: {
+        original,
+        copia,
+        testeAlex,
+      },
+      areIdentical,
+    });
   });
 
   // ============================================================
@@ -688,42 +368,46 @@ def ${functionName}(*args, **kwargs):
       if (!fs.existsSync(srcPath)) {
         return res.status(404).json({
           success: false,
-          error: 'app_teste.py não encontrado na raiz.',
+          error:
+            'app_teste.py não encontrado na raiz.',
         });
       }
 
-      fs.copyFileSync(srcPath, dstPath);
+      fs.copyFileSync(
+        srcPath,
+        dstPath
+      );
 
-      const original = getFileStats('app_teste.py');
-      const copia = getFileStats('app_teste_copia.py');
+      const copiaStats =
+        getFileStats(
+          'app_teste_copia.py'
+        );
+
+      const origStats =
+        getFileStats('app_teste.py');
 
       return res.json({
         success: true,
         message:
           'Cópia física app_teste_copia.py criada com sucesso.',
-        copia,
+        copia: copiaStats,
         isIdentical:
-          original.exists &&
-          copia.exists &&
-          original.sha256 === copia.sha256,
+          copiaStats.sha256 ===
+          origStats.sha256,
       });
-    } catch (error: any) {
+    } catch (e: any) {
       return res.status(500).json({
         success: false,
-        error: error?.message || 'Erro ao criar cópia.',
+        error: e.message,
       });
     }
   });
 
   // ============================================================
-  // EXECUTAR CÓPIA
+  // TESTAR CÓPIA
   // ============================================================
 
   app.post('/api/run-copia', (req, res) => {
-    if (!requireAuthentication(req, res)) {
-      return;
-    }
-
     const filePath = path.join(
       process.cwd(),
       'app_teste_copia.py'
@@ -738,494 +422,125 @@ def ${functionName}(*args, **kwargs):
     }
 
     const startTime = Date.now();
+    const python = getPythonCommand();
 
-    execFile(
-      PYTHON_COMMAND,
-      [filePath],
-      {
-        timeout: EXECUTION_TIMEOUT_MS,
-        maxBuffer: 10 * 1024 * 1024,
-      },
-      (error, stdout, stderr) => {
-        const durationMs = Date.now() - startTime;
+    const script = `
+import sys
+import time
+import urllib.request
+import json
+import threading
 
-        return res.json({
-          success: !error,
-          exitCode: error
-            ? typeof error.code === 'number'
-              ? error.code
-              : 1
-            : 0,
-          stdout: stdout || '',
-          stderr: stderr || '',
-          durationMs,
-          executedCommand:
-            `${PYTHON_COMMAND} app_teste_copia.py`,
-        });
-      }
-    );
-  });
+import app_teste_copia
 
-  // ============================================================
-  // TESTE DE ARQUIVO ALEX
-  // ============================================================
+print('[1/3] Compilação e sintaxe Python: OK')
 
-  app.get('/api/check-file', (_req, res) => {
-    return res.json(
-      getFileStats('teste_alex.py')
-    );
-  });
+model = getattr(
+    app_teste_copia,
+    'MODEL',
+    'não informado'
+)
 
-  app.post('/api/create-file', (req, res) => {
-    try {
-      const targetFilePath = path.join(
-        process.cwd(),
-        'teste_alex.py'
-      );
+limite = getattr(
+    app_teste_copia,
+    'LIMITE_SEGUNDOS',
+    'não informado'
+)
 
-      const content =
-        typeof req.body?.content === 'string'
-          ? req.body.content
-          : 'print("Olá, arquivo Alex!")\n';
+intervalo = getattr(
+    app_teste_copia,
+    'INTERVALO_MONITORAMENTO',
+    'não informado'
+)
 
-      fs.writeFileSync(
-        targetFilePath,
-        content,
-        'utf8'
-      );
+print(
+    f'[2/3] Módulo importado com sucesso. Modelo: {model}'
+)
 
-      const stats = fs.statSync(targetFilePath);
+print(
+    f'      Tempo limite configurado: {limite}s | '
+    f'Monitoramento: {intervalo}s'
+)
 
-      return res.json({
-        success: true,
-        message:
-          'Arquivo criado com sucesso no disco.',
-        filename: 'teste_alex.py',
-        filePath: targetFilePath,
-        size: stats.size,
-        modifiedAt: stats.mtime.toISOString(),
-        content,
-      });
-    } catch (error: any) {
-      return res.status(500).json({
-        success: false,
-        error:
-          error?.message ||
-          'Erro ao criar teste_alex.py.',
-      });
-    }
-  });
+if hasattr(app_teste_copia, 'app'):
+    port = 10042
 
-  app.post('/api/run-python', (req, res) => {
-    if (!requireAuthentication(req, res)) {
-      return;
-    }
+    def run_app():
+        try:
+            app_teste_copia.app.run(
+                host='127.0.0.1',
+                port=port,
+                threaded=True,
+                use_reloader=False
+            )
+        except Exception as e:
+            print(f'Erro no servidor: {e}')
 
-    const targetFilePath = path.join(
-      process.cwd(),
-      'teste_alex.py'
-    );
+    t = threading.Thread(
+        target=run_app,
+        daemon=True
+    )
 
-    if (!fs.existsSync(targetFilePath)) {
-      return res.status(404).json({
-        success: false,
-        error:
-          'teste_alex.py não encontrado.',
-      });
-    }
+    t.start()
 
-    const startTime = Date.now();
+    time.sleep(0.8)
 
-    execFile(
-      PYTHON_COMMAND,
-      [targetFilePath],
-      {
-        timeout: EXECUTION_TIMEOUT_MS,
-        maxBuffer: 10 * 1024 * 1024,
-      },
-      (error, stdout, stderr) => {
-        const durationMs = Date.now() - startTime;
-
-        return res.json({
-          success: !error,
-          exitCode: error
-            ? typeof error.code === 'number'
-              ? error.code
-              : 1
-            : 0,
-          stdout: stdout || '',
-          stderr: stderr || '',
-          durationMs,
-          executedCommand:
-            `${PYTHON_COMMAND} teste_alex.py`,
-        });
-      }
-    );
-  });
-
-  // ============================================================
-  // PONTE ALEX V1
-  // ============================================================
-
-  app.post('/api/ponte/processar', (req, res) => {
-    if (!requireAuthentication(req, res)) {
-      return;
-    }
-
-    try {
-      const {
-        filename = 'script_alex.py',
-        fileContent,
-        instruction,
-        searchTarget,
-        replaceWith,
-      } = req.body || {};
-
-      if (
-        typeof fileContent !== 'string' ||
-        !fileContent.length
-      ) {
-        return res.status(400).json({
-          success: false,
-          error:
-            'Conteúdo do arquivo não fornecido ou inválido.',
-        });
-      }
-
-      if (
-        typeof instruction !== 'string' ||
-        !instruction.trim()
-      ) {
-        return res.status(400).json({
-          success: false,
-          error:
-            'Instrução de alteração não fornecida.',
-        });
-      }
-
-      const timestamp = Date.now();
-
-      const cleanBaseName = path
-        .basename(
-          String(filename),
-          path.extname(String(filename))
+    try:
+        req = urllib.request.Request(
+            f'http://127.0.0.1:{port}/status'
         )
-        .replace(/[^a-zA-Z0-9_-]/g, '_');
 
-      const ext =
-        path.extname(String(filename)) || '.py';
+        with urllib.request.urlopen(
+            req,
+            timeout=3
+        ) as resp:
 
-      const originalSaveFilename =
-        `${cleanBaseName}_original_${timestamp}${ext}`;
+            body = resp.read().decode('utf-8')
+            data = json.loads(body)
 
-      const originalSavePath =
-        path.join(
-          originalsDir,
-          originalSaveFilename
-        );
+            print(
+                '[3/3] Resposta da rota /status do servidor Flask:'
+            )
 
-      fs.writeFileSync(
-        originalSavePath,
-        fileContent,
-        'utf8'
+            print(
+                f"      Status do job: "
+                f"{data.get('status')} | "
+                f"Mensagem: "
+                f"{data.get('mensagem')}"
+            )
+
+            print(
+                '=== TESTE DE EXECUÇÃO PYTHON BEM-SUCEDIDO (EXIT CODE 0) ==='
+            )
+
+    except Exception as e:
+        print(
+            f'[3/3] Servidor importado, mas a rota /status não respondeu: {e}'
+        )
+
+else:
+    print(
+        '[3/3] Módulo Python importado com sucesso. '
+        'Nenhuma variável app Flask encontrada para teste HTTP.'
+    )
+
+    print(
+        '=== TESTE DE EXECUÇÃO PYTHON BEM-SUCEDIDO (EXIT CODE 0) ==='
+    )
+`;
+
+    const encoded =
+      Buffer.from(script, 'utf8').toString(
+        'base64'
       );
 
-      const origStats =
-        fs.statSync(originalSavePath);
+    const command =
+      `${python} -c "import base64; exec(base64.b64decode('${encoded}'))"`;
 
-      const origHash =
-        sha256(fileContent);
-
-      const transformation =
-        applyLocalTransformation(
-          fileContent,
-          instruction,
-          searchTarget,
-          replaceWith
-        );
-
-      const processedFilename =
-        `${cleanBaseName}_alex_v1_${timestamp}${ext}`;
-
-      const processedFilePath =
-        path.join(
-          processedDir,
-          processedFilename
-        );
-
-      fs.writeFileSync(
-        processedFilePath,
-        transformation.newContent,
-        'utf8'
-      );
-
-      const procStats =
-        fs.statSync(processedFilePath);
-
-      const procHash =
-        sha256(transformation.newContent);
-
-      const startExecTime = Date.now();
-
-      execFile(
-        PYTHON_COMMAND,
-        ['-m', 'py_compile', processedFilePath],
-        {
-          timeout: COMPILE_TIMEOUT_MS,
-          maxBuffer: 10 * 1024 * 1024,
-        },
-        (compileErr, compileStdout, compileStderr) => {
-          if (compileErr) {
-            const durationMs =
-              Date.now() - startExecTime;
-
-            return res.json({
-              success: false,
-              testPassed: false,
-              ponteVersion: 'v1',
-              testMessage:
-                '❌ Falha de sintaxe / compilação Python detectada.',
-
-              compileCheck: {
-                passed: false,
-                error:
-                  (
-                    compileStderr ||
-                    compileErr.message ||
-                    'Erro de compilação.'
-                  ).trim(),
-              },
-
-              execution: {
-                exitCode:
-                  typeof compileErr.code === 'number'
-                    ? compileErr.code
-                    : 1,
-                stdout: compileStdout || '',
-                stderr:
-                  compileStderr ||
-                  compileErr.message ||
-                  '',
-                durationMs,
-              },
-
-              originalFile: {
-                filename:
-                  originalSaveFilename,
-                size: origStats.size,
-                lines:
-                  fileContent.split('\n').length,
-                sha256: origHash,
-                savedPath:
-                  `storage/originals/${originalSaveFilename}`,
-                untouched: true,
-              },
-
-              processedFile: {
-                filename: processedFilename,
-                size: procStats.size,
-                lines:
-                  transformation.newContent.split('\n').length,
-                sha256: procHash,
-                content:
-                  transformation.newContent,
-                downloadUrl:
-                  `/api/download/processed/${processedFilename}`,
-              },
-
-              instruction,
-              transformSummary:
-                transformation.summary,
-              neverOverwritten: true,
-            });
-          }
-
-          execFile(
-            PYTHON_COMMAND,
-            [processedFilePath],
-            {
-              timeout:
-                EXECUTION_TIMEOUT_MS,
-              maxBuffer:
-                10 * 1024 * 1024,
-            },
-            (execErr, execStdout, execStderr) => {
-              const durationMs =
-                Date.now() - startExecTime;
-
-              const testPassed = !execErr;
-
-              return res.json({
-                success: true,
-                testPassed,
-
-                testMessage: testPassed
-                  ? '✅ Teste de execução Python concluído com sucesso.'
-                  : '⚠️ Erro durante a execução do novo arquivo.',
-
-                compileCheck: {
-                  passed: true,
-                  message:
-                    'Sintaxe Python OK',
-                },
-
-                execution: {
-                  exitCode: execErr
-                    ? typeof execErr.code === 'number'
-                      ? execErr.code
-                      : 1
-                    : 0,
-                  stdout:
-                    execStdout || '',
-                  stderr:
-                    execStderr || '',
-                  durationMs,
-                },
-
-                originalFile: {
-                  filename:
-                    originalSaveFilename,
-                  size: origStats.size,
-                  lines:
-                    fileContent.split('\n').length,
-                  sha256: origHash,
-                  savedPath:
-                    `storage/originals/${originalSaveFilename}`,
-                  untouched: true,
-                },
-
-                processedFile: {
-                  filename:
-                    processedFilename,
-                  size: procStats.size,
-                  lines:
-                    transformation.newContent.split('\n').length,
-                  sha256: procHash,
-                  content:
-                    transformation.newContent,
-                  downloadUrl:
-                    `/api/download/processed/${processedFilename}`,
-                },
-
-                instruction,
-                transformSummary:
-                  transformation.summary,
-                neverOverwritten: true,
-              });
-            }
-          );
-        }
-      );
-    } catch (error: any) {
-      return res.status(500).json({
-        success: false,
-        error:
-          `Erro ao processar arquivo: ${
-            error?.message || 'erro desconhecido'
-          }`,
-      });
-    }
-  });
-
-  // ============================================================
-  // HISTÓRICO
-  // ============================================================
-
-  app.get('/api/ponte/history', (_req, res) => {
-    try {
-      if (!fs.existsSync(processedDir)) {
-        return res.json({
-          success: true,
-          items: [],
-        });
-      }
-
-      const files = fs
-        .readdirSync(processedDir)
-        .filter(
-          (filename) =>
-            filename.toLowerCase().endsWith('.py')
-        );
-
-      const items = files
-        .map((filename) => {
-          const filePath =
-            path.join(processedDir, filename);
-
-          const stats =
-            fs.statSync(filePath);
-
-          return {
-            filename,
-            size: stats.size,
-            modifiedAt:
-              stats.mtime.toISOString(),
-            downloadUrl:
-              `/api/download/processed/${filename}`,
-          };
-        })
-        .sort(
-          (a, b) =>
-            new Date(b.modifiedAt).getTime() -
-            new Date(a.modifiedAt).getTime()
-        );
-
-      return res.json({
-        success: true,
-        items,
-      });
-    } catch (error: any) {
-      return res.status(500).json({
-        success: false,
-        error:
-          error?.message ||
-          'Erro ao consultar histórico.',
-      });
-    }
-  });
-
-  // ============================================================
-  // EXECUTAR ARQUIVO PROCESSADO
-  // ============================================================
-
-  app.post('/api/ponte/run-test', (req, res) => {
-    if (!requireAuthentication(req, res)) {
-      return;
-    }
-
-    const { filename } = req.body || {};
-
-    if (
-      !isSafeStoredPythonFilename(filename)
-    ) {
-      return res.status(400).json({
-        success: false,
-        error:
-          'Nome de arquivo Python inválido.',
-      });
-    }
-
-    const safeName =
-      path.basename(filename);
-
-    const filePath =
-      path.join(processedDir, safeName);
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({
-        success: false,
-        error:
-          'Arquivo processado não encontrado.',
-      });
-    }
-
-    const startTime = Date.now();
-
-    execFile(
-      PYTHON_COMMAND,
-      [filePath],
+    exec(
+      command,
       {
-        timeout: EXECUTION_TIMEOUT_MS,
+        timeout: 15000,
         maxBuffer: 10 * 1024 * 1024,
       },
       (error, stdout, stderr) => {
@@ -1243,29 +558,982 @@ def ${functionName}(*args, **kwargs):
           stderr: stderr || '',
           durationMs,
           executedCommand:
-            `${PYTHON_COMMAND} ${safeName}`,
+            `${python} app_teste_copia.py ` +
+            '(verificação de runtime e servidor)',
         });
       }
     );
   });
 
   // ============================================================
-  // DOWNLOAD DOS ARQUIVOS PROCESSADOS
+  // LEGACY - CHECK FILE
+  // ============================================================
+
+  app.get('/api/check-file', (req, res) => {
+    return res.json(
+      getFileStats('teste_alex.py')
+    );
+  });
+
+  // ============================================================
+  // LEGACY - CREATE FILE
+  // ============================================================
+
+  app.post('/api/create-file', (req, res) => {
+    try {
+      const targetFilePath =
+        path.join(
+          process.cwd(),
+          'teste_alex.py'
+        );
+
+      const content =
+        req.body?.content !== undefined
+          ? String(req.body.content)
+          : 'print("Olá, arquivo Alex!")\n';
+
+      fs.writeFileSync(
+        targetFilePath,
+        content,
+        'utf8'
+      );
+
+      const stats =
+        fs.statSync(targetFilePath);
+
+      return res.json({
+        success: true,
+        message:
+          'Arquivo criado com sucesso no disco.',
+        filename: 'teste_alex.py',
+        filePath: targetFilePath,
+        size: stats.size,
+        modifiedAt:
+          stats.mtime.toISOString(),
+        content: fs.readFileSync(
+          targetFilePath,
+          'utf8'
+        ),
+      });
+    } catch (error: any) {
+      return res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  });
+
+  // ============================================================
+  // LEGACY - RUN PYTHON
+  // ============================================================
+
+  app.post('/api/run-python', (req, res) => {
+    const targetFilePath =
+      path.join(
+        process.cwd(),
+        'teste_alex.py'
+      );
+
+    if (!fs.existsSync(targetFilePath)) {
+      return res.status(404).json({
+        success: false,
+        error:
+          'teste_alex.py não encontrado.',
+      });
+    }
+
+    const startTime = Date.now();
+    const python = getPythonCommand();
+
+    exec(
+      `${python} ${getShellSafePath(
+        targetFilePath
+      )}`,
+      {
+        timeout: 10000,
+        maxBuffer: 10 * 1024 * 1024,
+      },
+      (error, stdout, stderr) => {
+        const durationMs =
+          Date.now() - startTime;
+
+        return res.json({
+          success: !error,
+          exitCode: error
+            ? typeof error.code === 'number'
+              ? error.code
+              : 1
+            : 0,
+          stdout: stdout || '',
+          stderr: stderr || '',
+          durationMs,
+          executedCommand:
+            `${python} teste_alex.py`,
+        });
+      }
+    );
+  });
+
+  // ============================================================
+  // TRANSFORMAÇÃO LOCAL
+  // ============================================================
+
+  function applyLocalTransformation(
+    originalContent: string,
+    instruction: string,
+    searchTarget?: string,
+    replaceWith?: string
+  ): {
+    newContent: string;
+    summary: string;
+  } {
+    let modified = originalContent;
+
+    const summaryParts: string[] = [];
+
+    // ----------------------------------------------------------
+    // 1. SUBSTITUIÇÃO EXATA
+    // ----------------------------------------------------------
+
+    if (
+      searchTarget !== undefined &&
+      searchTarget.length > 0 &&
+      replaceWith !== undefined
+    ) {
+      if (modified.includes(searchTarget)) {
+        modified = modified
+          .split(searchTarget)
+          .join(replaceWith);
+
+        summaryParts.push(
+          `Substituição exata de '${searchTarget}' por '${replaceWith}'`
+        );
+      } else {
+        summaryParts.push(
+          `Aviso: alvo '${searchTarget}' não foi encontrado para substituição exata.`
+        );
+      }
+    }
+
+    const instrLower =
+      instruction.toLowerCase().trim();
+
+    // Evita warning de TypeScript quando
+    // a variável é usada apenas como normalização.
+    void instrLower;
+
+    // ----------------------------------------------------------
+    // 2. SUBSTITUIR "X" POR "Y"
+    // ----------------------------------------------------------
+
+    const replacePattern =
+      /(?:substituir|trocar|mudar|alterar|replace)\s+["'`]([^"'`]+)["'`]\s+(?:por|para|with)\s+["'`]([^"'`]+)["'`]/gi;
+
+    let match: RegExpExecArray | null;
+
+    let replacedCount = 0;
+
+    while (
+      (match =
+        replacePattern.exec(
+          instruction
+        )) !== null
+    ) {
+      const fromText = match[1];
+      const toText = match[2];
+
+      if (modified.includes(fromText)) {
+        modified = modified
+          .split(fromText)
+          .join(toText);
+
+        summaryParts.push(
+          `Substituído "${fromText}" por "${toText}"`
+        );
+
+        replacedCount++;
+      } else {
+        summaryParts.push(
+          `Trecho "${fromText}" não foi localizado no código original`
+        );
+      }
+    }
+
+    // ----------------------------------------------------------
+    // 3. ALTERAR VALOR DE VARIÁVEL
+    // ----------------------------------------------------------
+
+    const variableValuePattern =
+      /(?:alterar|mudar|trocar|substituir)\s+(?:somente\s+)?(?:o\s+)?valor\s+da\s+vari[áa]vel\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+de\s+(-?\d+(?:\.\d+)?)\s+para\s+(-?\d+(?:\.\d+)?)/i;
+
+    const variableValueMatch =
+      instruction.match(
+        variableValuePattern
+      );
+
+    if (
+      variableValueMatch &&
+      replacedCount === 0 &&
+      !searchTarget
+    ) {
+      const variableName =
+        variableValueMatch[1];
+
+      const fromValue =
+        variableValueMatch[2];
+
+      const toValue =
+        variableValueMatch[3];
+
+      const lines =
+        modified.split('\n');
+
+      const assignmentPattern =
+        new RegExp(
+          '^(\\s*' +
+            variableName +
+            '\\s*=\\s*)' +
+            fromValue +
+            '(\\s*(?:#.*)?)$'
+        );
+
+      let variableChanged = false;
+
+      for (
+        let i = 0;
+        i < lines.length;
+        i++
+      ) {
+        if (
+          assignmentPattern.test(
+            lines[i]
+          )
+        ) {
+          lines[i] =
+            lines[i].replace(
+              assignmentPattern,
+              '$1' +
+                toValue +
+                '$2'
+            );
+
+          variableChanged = true;
+          break;
+        }
+      }
+
+      if (variableChanged) {
+        modified =
+          lines.join('\n');
+
+        summaryParts.push(
+          `Valor da variável '${variableName}' alterado de ${fromValue} para ${toValue}`
+        );
+
+        replacedCount++;
+      } else {
+        summaryParts.push(
+          `Aviso: variável '${variableName}' com valor ${fromValue} não foi encontrada para alteração.`
+        );
+      }
+    }
+
+    // ----------------------------------------------------------
+    // 4. ADICIONAR FUNÇÃO
+    // ----------------------------------------------------------
+
+    const funcPattern =
+      /(?:adicionar|criar)\s+fun[çc][ãa]o\s+([a-zA-Z0-9_]+)\s*[:(]?([\s\S]*)/i;
+
+    const funcMatch =
+      instruction.match(
+        funcPattern
+      );
+
+    if (
+      funcMatch &&
+      replacedCount === 0 &&
+      !searchTarget
+    ) {
+      const funcName =
+        funcMatch[1];
+
+      const funcDetails =
+        funcMatch[2]?.trim() || '';
+
+      const safeDescription =
+        funcDetails.replace(
+          /"""/g,
+          '\\"\\"\\"'
+        );
+
+      const newFunctionCode =
+        `\n\n` +
+        `def ${funcName}(*args, **kwargs):\n` +
+        `    """Função gerada pela Ponte Alex v2: ${safeDescription || 'Implementação automatizada'}"""\n` +
+        `    print("[Ponte Alex] Função ${funcName} executada.")\n` +
+        `    return None\n`;
+
+      modified += newFunctionCode;
+
+      summaryParts.push(
+        `Adicionada nova função 'def ${funcName}'`
+      );
+
+      replacedCount++;
+    }
+
+    // ----------------------------------------------------------
+    // 5. ADICIONAR PRINT
+    // ----------------------------------------------------------
+
+    const printPattern =
+      /(?:adicionar|inserir|colocar)\s+(?:print|mensagem|log)[:\s]+["'`]([^"'`]+)["'`]/i;
+
+    const printMatch =
+      instruction.match(
+        printPattern
+      );
+
+    if (
+      printMatch &&
+      replacedCount === 0 &&
+      !searchTarget
+    ) {
+      const msg =
+        printMatch[1]
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"');
+
+      const printCode =
+        `\nprint("${msg}")\n`;
+
+      modified += printCode;
+
+      summaryParts.push(
+        `Adicionado comando print("${msg}")`
+      );
+
+      replacedCount++;
+    }
+
+    // ----------------------------------------------------------
+    // 6. ADICIONAR NO INÍCIO
+    // ----------------------------------------------------------
+
+    const prependPattern =
+      /(?:adicionar|inserir|prepend)\s+no\s+in[ií]cio[:\s]+([\s\S]+)/i;
+
+    const prependMatch =
+      instruction.match(
+        prependPattern
+      );
+
+    if (prependMatch) {
+      const prepCode =
+        prependMatch[1].trim() +
+        '\n';
+
+      modified =
+        prepCode + modified;
+
+      summaryParts.push(
+        'Adicionado código no início do arquivo'
+      );
+
+      replacedCount++;
+    }
+
+    // ----------------------------------------------------------
+    // 7. ADICIONAR NO FINAL
+    // ----------------------------------------------------------
+
+    const appendPattern =
+      /(?:adicionar|inserir|append)\s+(?:no\s+final|ao\s+fim)[:\s]+([\s\S]+)/i;
+
+    const appendMatch =
+      instruction.match(
+        appendPattern
+      );
+
+    if (appendMatch) {
+      const appCode =
+        '\n' +
+        appendMatch[1].trim() +
+        '\n';
+
+      modified += appCode;
+
+      summaryParts.push(
+        'Adicionado código ao final do arquivo'
+      );
+
+      replacedCount++;
+    }
+
+    // ----------------------------------------------------------
+    // 8. NADA RECONHECIDO
+    // ----------------------------------------------------------
+
+    if (summaryParts.length === 0) {
+      const timestamp =
+        new Date().toLocaleString(
+          'pt-BR'
+        );
+
+      const escapedInstruction =
+        instruction.replace(
+          /\\/g,
+          '\\\\'
+        ).replace(
+          /"/g,
+          '\\"'
+        );
+
+      const banner =
+        `# ========================================================\n` +
+        `# [PONTE ALEX v2] Alteração Aplicada\n` +
+        `# Instrução: ${instruction}\n` +
+        `# Data: ${timestamp}\n` +
+        `# ========================================================\n`;
+
+      if (
+        instruction.includes('\n') ||
+        instruction.includes('def ') ||
+        instruction.includes('print(') ||
+        instruction.includes('=')
+      ) {
+        modified =
+          banner +
+          modified +
+          `\n\n` +
+          `# --- Código anexado pela instrução ---\n` +
+          instruction +
+          `\n`;
+
+        summaryParts.push(
+          'Instrução e código adicionados ao arquivo.'
+        );
+      } else {
+        modified =
+          banner +
+          modified +
+          `\n# Registro da alteração: ${instruction}\n` +
+          `print("[Ponte Alex v2] Modificação executada: ${escapedInstruction}")\n`;
+
+        summaryParts.push(
+          'Modificação registrada e comando de validação inserido.'
+        );
+      }
+    }
+
+    return {
+      newContent: modified,
+      summary:
+        summaryParts.join('; '),
+    };
+  }
+
+  // ============================================================
+  // PONTE ALEX v1
+  // ============================================================
+
+  app.post(
+    '/api/ponte/processar',
+    (req, res) => {
+      try {
+        const {
+          filename = 'script_alex.py',
+          fileContent,
+          instruction,
+          searchTarget,
+          replaceWith,
+        } = req.body || {};
+
+        if (
+          !fileContent ||
+          typeof fileContent !== 'string'
+        ) {
+          return res.status(400).json({
+            success: false,
+            error:
+              'Conteúdo do arquivo não fornecido ou inválido.',
+          });
+        }
+
+        if (
+          !instruction ||
+          typeof instruction !== 'string'
+        ) {
+          return res.status(400).json({
+            success: false,
+            error:
+              'Instrução de alteração não fornecida.',
+          });
+        }
+
+        const timestamp = Date.now();
+
+        const cleanBaseName =
+          path
+            .basename(
+              String(filename),
+              path.extname(
+                String(filename)
+              )
+            )
+            .replace(
+              /[^a-zA-Z0-9_-]/g,
+              '_'
+            );
+
+        const ext =
+          path.extname(
+            String(filename)
+          ) || '.py';
+
+        const originalSaveFilename =
+          `${cleanBaseName}_original_${timestamp}${ext}`;
+
+        const originalSavePath =
+          path.join(
+            originalsDir,
+            originalSaveFilename
+          );
+
+        fs.writeFileSync(
+          originalSavePath,
+          fileContent,
+          'utf8'
+        );
+
+        const origStats =
+          fs.statSync(
+            originalSavePath
+          );
+
+        const origHash =
+          calculateSha256(
+            fileContent
+          );
+
+        const {
+          newContent,
+          summary: transformSummary,
+        } =
+          applyLocalTransformation(
+            fileContent,
+            instruction,
+            searchTarget,
+            replaceWith
+          );
+
+        const processedFilename =
+          `${cleanBaseName}_alex_v1_${timestamp}${ext}`;
+
+        const processedFilePath =
+          path.join(
+            processedDir,
+            processedFilename
+          );
+
+        fs.writeFileSync(
+          processedFilePath,
+          newContent,
+          'utf8'
+        );
+
+        const procStats =
+          fs.statSync(
+            processedFilePath
+          );
+
+        const procHash =
+          calculateSha256(
+            newContent
+          );
+
+        const python =
+          getPythonCommand();
+
+        const startExecTime =
+          Date.now();
+
+        exec(
+          `${python} -m py_compile ${getShellSafePath(
+            processedFilePath
+          )}`,
+          {
+            timeout: 8000,
+            maxBuffer:
+              10 * 1024 * 1024,
+          },
+          (
+            compileErr,
+            compileStdout,
+            compileStderr
+          ) => {
+            if (compileErr) {
+              const durationMs =
+                Date.now() -
+                startExecTime;
+
+              return res.json({
+                success: false,
+                testPassed: false,
+                testMessage:
+                  '❌ Falha de sintaxe / compilação Python detectada.',
+                compileCheck: {
+                  passed: false,
+                  error:
+                    (
+                      compileStderr ||
+                      compileErr.message
+                    ).trim(),
+                },
+                execution: {
+                  exitCode:
+                    typeof compileErr.code ===
+                    'number'
+                      ? compileErr.code
+                      : 1,
+                  stdout:
+                    compileStdout || '',
+                  stderr:
+                    compileStderr ||
+                    compileErr.message,
+                  durationMs,
+                },
+                originalFile: {
+                  filename:
+                    originalSaveFilename,
+                  size:
+                    origStats.size,
+                  lines:
+                    fileContent.split(
+                      '\n'
+                    ).length,
+                  sha256:
+                    origHash,
+                  savedPath:
+                    originalSavePath,
+                  untouched: true,
+                },
+                processedFile: {
+                  filename:
+                    processedFilename,
+                  size:
+                    procStats.size,
+                  lines:
+                    newContent.split(
+                      '\n'
+                    ).length,
+                  sha256:
+                    procHash,
+                  content:
+                    newContent,
+                  downloadUrl:
+                    `/api/download/processed/${processedFilename}`,
+                },
+                instruction,
+                transformSummary,
+                neverOverwritten: true,
+              });
+            }
+
+            exec(
+              `${python} ${getShellSafePath(
+                processedFilePath
+              )}`,
+              {
+                timeout: 10000,
+                maxBuffer:
+                  10 * 1024 * 1024,
+              },
+              (
+                execErr,
+                execStdout,
+                execStderr
+              ) => {
+                const durationMs =
+                  Date.now() -
+                  startExecTime;
+
+                const testPassed =
+                  !execErr;
+
+                return res.json({
+                  success: true,
+                  testPassed,
+                  testMessage:
+                    testPassed
+                      ? '✅ Teste de execução Python concluído com sucesso (Exit Code 0).'
+                      : '⚠️ Erro durante a execução em runtime do novo arquivo.',
+                  compileCheck: {
+                    passed: true,
+                    message:
+                      'Sintaxe Python OK',
+                  },
+                  execution: {
+                    exitCode:
+                      execErr
+                        ? typeof execErr.code ===
+                          'number'
+                          ? execErr.code
+                          : 1
+                        : 0,
+                    stdout:
+                      execStdout || '',
+                    stderr:
+                      execStderr || '',
+                    durationMs,
+                  },
+                  originalFile: {
+                    filename:
+                      originalSaveFilename,
+                    size:
+                      origStats.size,
+                    lines:
+                      fileContent.split(
+                        '\n'
+                      ).length,
+                    sha256:
+                      origHash,
+                    savedPath:
+                      originalSavePath,
+                    untouched: true,
+                  },
+                  processedFile: {
+                    filename:
+                      processedFilename,
+                    size:
+                      procStats.size,
+                    lines:
+                      newContent.split(
+                        '\n'
+                      ).length,
+                    sha256:
+                      procHash,
+                    content:
+                      newContent,
+                    downloadUrl:
+                      `/api/download/processed/${processedFilename}`,
+                  },
+                  instruction,
+                  transformSummary,
+                  neverOverwritten: true,
+                });
+              }
+            );
+          }
+        );
+      } catch (err: any) {
+        return res.status(500).json({
+          success: false,
+          error:
+            `Erro ao processar arquivo: ${err.message}`,
+        });
+      }
+    }
+  );
+
+  // ============================================================
+  // HISTÓRICO
+  // ============================================================
+
+  app.get(
+    '/api/ponte/history',
+    (req, res) => {
+      try {
+        if (
+          !fs.existsSync(
+            processedDir
+          )
+        ) {
+          return res.json({
+            success: true,
+            items: [],
+          });
+        }
+
+        const files =
+          fs.readdirSync(
+            processedDir
+          ).filter(
+            (file) =>
+              file
+                .toLowerCase()
+                .endsWith('.py')
+          );
+
+        const items =
+          files
+            .map((filename) => {
+              const filePath =
+                path.join(
+                  processedDir,
+                  filename
+                );
+
+              const stats =
+                fs.statSync(
+                  filePath
+                );
+
+              return {
+                filename,
+                size: stats.size,
+                modifiedAt:
+                  stats.mtime.toISOString(),
+                downloadUrl:
+                  `/api/download/processed/${encodeURIComponent(
+                    filename
+                  )}`,
+              };
+            })
+            .sort(
+              (a, b) =>
+                new Date(
+                  b.modifiedAt
+                ).getTime() -
+                new Date(
+                  a.modifiedAt
+                ).getTime()
+            );
+
+        return res.json({
+          success: true,
+          items,
+        });
+      } catch (e: any) {
+        return res.status(500).json({
+          success: false,
+          error: e.message,
+        });
+      }
+    }
+  );
+
+  // ============================================================
+  // EXECUTAR ARQUIVO PROCESSADO
+  // ============================================================
+
+  app.post(
+    '/api/ponte/run-test',
+    (req, res) => {
+      const { filename } =
+        req.body || {};
+
+      if (
+        !filename ||
+        typeof filename !== 'string'
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            'Nome do arquivo não informado.',
+        });
+      }
+
+      const safeName =
+        path.basename(filename);
+
+      if (
+        safeName !== filename &&
+        filename.includes('/')
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            'Nome de arquivo inválido.',
+        });
+      }
+
+      const filePath =
+        path.join(
+          processedDir,
+          safeName
+        );
+
+      if (
+        !isInsideDirectory(
+          filePath,
+          processedDir
+        )
+      ) {
+        return res.status(403).json({
+          success: false,
+          error:
+            'Acesso ao arquivo negado.',
+        });
+      }
+
+      if (
+        !fs.existsSync(filePath)
+      ) {
+        return res.status(404).json({
+          success: false,
+          error:
+            'Arquivo processado não encontrado.',
+        });
+      }
+
+      const startTime =
+        Date.now();
+
+      const python =
+        getPythonCommand();
+
+      exec(
+        `${python} ${getShellSafePath(
+          filePath
+        )}`,
+        {
+          timeout: 10000,
+          maxBuffer:
+            10 * 1024 * 1024,
+        },
+        (
+          err,
+          stdout,
+          stderr
+        ) => {
+          const durationMs =
+            Date.now() -
+            startTime;
+
+          return res.json({
+            success: !err,
+            exitCode: err
+              ? typeof err.code ===
+                'number'
+                ? err.code
+                : 1
+              : 0,
+            stdout:
+              stdout || '',
+            stderr:
+              stderr || '',
+            durationMs,
+            executedCommand:
+              `${python} ${safeName}`,
+          });
+        }
+      );
+    }
+  );
+
+  // ============================================================
+  // DOWNLOAD PROCESSADO
   // ============================================================
 
   app.get(
     '/api/download/processed/:filename',
     (req, res) => {
       const filename =
-        path.basename(req.params.filename);
-
-      if (
-        !filename.toLowerCase().endsWith('.py')
-      ) {
-        return res.status(403).send(
-          'Acesso negado ao arquivo solicitado.'
+        path.basename(
+          req.params.filename
         );
-      }
 
       const filePath =
         path.join(
@@ -1273,7 +1541,20 @@ def ${functionName}(*args, **kwargs):
           filename
         );
 
-      if (!fs.existsSync(filePath)) {
+      if (
+        !isInsideDirectory(
+          filePath,
+          processedDir
+        )
+      ) {
+        return res.status(403).send(
+          'Acesso negado.'
+        );
+      }
+
+      if (
+        !fs.existsSync(filePath)
+      ) {
         return res.status(404).send(
           'Arquivo processado não encontrado.'
         );
@@ -1287,22 +1568,16 @@ def ${functionName}(*args, **kwargs):
   );
 
   // ============================================================
-  // DOWNLOAD DOS ORIGINAIS
+  // DOWNLOAD ORIGINAL
   // ============================================================
 
   app.get(
     '/api/download/originals/:filename',
     (req, res) => {
       const filename =
-        path.basename(req.params.filename);
-
-      if (
-        !filename.toLowerCase().endsWith('.py')
-      ) {
-        return res.status(403).send(
-          'Acesso negado ao arquivo solicitado.'
+        path.basename(
+          req.params.filename
         );
-      }
 
       const filePath =
         path.join(
@@ -1310,7 +1585,20 @@ def ${functionName}(*args, **kwargs):
           filename
         );
 
-      if (!fs.existsSync(filePath)) {
+      if (
+        !isInsideDirectory(
+          filePath,
+          originalsDir
+        )
+      ) {
+        return res.status(403).send(
+          'Acesso negado.'
+        );
+      }
+
+      if (
+        !fs.existsSync(filePath)
+      ) {
         return res.status(404).send(
           'Arquivo original não encontrado.'
         );
@@ -1324,7 +1612,7 @@ def ${functionName}(*args, **kwargs):
   );
 
   // ============================================================
-  // OPENAPI
+  // OPENAPI V2
   // ============================================================
 
   app.get(
@@ -1333,14 +1621,16 @@ def ${functionName}(*args, **kwargs):
       '/api/openapi_v2.yaml',
       '/api/ponte/openapi_v2.yaml',
     ],
-    (_req, res) => {
+    (req, res) => {
       const yamlPath =
         path.join(
           process.cwd(),
           'ponte_alex_openapi_v2.yaml'
         );
 
-      if (!fs.existsSync(yamlPath)) {
+      if (
+        !fs.existsSync(yamlPath)
+      ) {
         return res.status(404).send(
           'Arquivo OpenAPI v2 não encontrado.'
         );
@@ -1356,9 +1646,15 @@ def ${functionName}(*args, **kwargs):
         'attachment; filename="ponte_alex_openapi_v2.yaml"'
       );
 
-      return res.sendFile(yamlPath);
+      return res.sendFile(
+        yamlPath
+      );
     }
   );
+
+  // ============================================================
+  // OPENAPI
+  // ============================================================
 
   app.get(
     [
@@ -1366,14 +1662,16 @@ def ${functionName}(*args, **kwargs):
       '/api/openapi.yaml',
       '/api/ponte/openapi.yaml',
     ],
-    (_req, res) => {
+    (req, res) => {
       const yamlPath =
         path.join(
           process.cwd(),
           'ponte_alex_openapi.yaml'
         );
 
-      if (!fs.existsSync(yamlPath)) {
+      if (
+        !fs.existsSync(yamlPath)
+      ) {
         return res.status(404).send(
           'Arquivo OpenAPI não encontrado.'
         );
@@ -1389,7 +1687,9 @@ def ${functionName}(*args, **kwargs):
         'attachment; filename="ponte_alex_openapi.yaml"'
       );
 
-      return res.sendFile(yamlPath);
+      return res.sendFile(
+        yamlPath
+      );
     }
   );
 
@@ -1402,14 +1702,16 @@ def ${functionName}(*args, **kwargs):
       '/cliente_ponte_alex.py',
       '/api/download/client/cliente_ponte_alex.py',
     ],
-    (_req, res) => {
+    (req, res) => {
       const filePath =
         path.join(
           process.cwd(),
           'cliente_ponte_alex.py'
         );
 
-      if (!fs.existsSync(filePath)) {
+      if (
+        !fs.existsSync(filePath)
+      ) {
         return res.status(404).send(
           'Arquivo cliente_ponte_alex.py não encontrado.'
         );
@@ -1425,23 +1727,31 @@ def ${functionName}(*args, **kwargs):
         'attachment; filename="cliente_ponte_alex.py"'
       );
 
-      return res.sendFile(filePath);
+      return res.sendFile(
+        filePath
+      );
     }
   );
+
+  // ============================================================
+  // TESTE CLIENTE PYTHON
+  // ============================================================
 
   app.get(
     [
       '/teste_cliente_ponte.py',
       '/api/download/client/teste_cliente_ponte.py',
     ],
-    (_req, res) => {
+    (req, res) => {
       const filePath =
         path.join(
           process.cwd(),
           'teste_cliente_ponte.py'
         );
 
-      if (!fs.existsSync(filePath)) {
+      if (
+        !fs.existsSync(filePath)
+      ) {
         return res.status(404).send(
           'Arquivo teste_cliente_ponte.py não encontrado.'
         );
@@ -1457,53 +1767,14 @@ def ${functionName}(*args, **kwargs):
         'attachment; filename="teste_cliente_ponte.py"'
       );
 
-      return res.sendFile(filePath);
-    }
-  );
-
-  // ============================================================
-  // DOWNLOAD DE ARQUIVOS LEGADOS
-  // ============================================================
-
-  app.get(
-    '/api/download/:filename',
-    (req, res) => {
-      const filename =
-        path.basename(req.params.filename);
-
-      const allowed = [
-        'app_teste_copia.py',
-        'app_teste.py',
-        'teste_alex.py',
-      ];
-
-      if (!allowed.includes(filename)) {
-        return res.status(403).send(
-          'Acesso negado ao arquivo solicitado.'
-        );
-      }
-
-      const filePath =
-        path.join(
-          process.cwd(),
-          filename
-        );
-
-      if (!fs.existsSync(filePath)) {
-        return res.status(404).send(
-          'Arquivo não encontrado no disco.'
-        );
-      }
-
-      return res.download(
-        filePath,
-        filename
+      return res.sendFile(
+        filePath
       );
     }
   );
 
   // ============================================================
-  // PONTE ALEX v2
+  // PONTE ALEX V2 - PING
   // ============================================================
 
   app.all(
@@ -1511,19 +1782,24 @@ def ${functionName}(*args, **kwargs):
       '/api/ponte/v2/ping',
       '/api/ponte/v2/status',
     ],
-    (_req, res) => {
+    (req, res) => {
       try {
         const configuredSecret =
-          getConfiguredSecret();
+          getSystemConfiguredSecret();
 
-        execFile(
-          PYTHON_COMMAND,
-          ['--version'],
+        const python =
+          getPythonCommand();
+
+        exec(
+          `${python} --version`,
           {
-            timeout: 5_000,
-            maxBuffer: 1_000_000,
+            timeout: 5000,
           },
-          (error, stdout, stderr) => {
+          (
+            err,
+            stdout,
+            stderr
+          ) => {
             const pyVer =
               (
                 stdout ||
@@ -1532,12 +1808,18 @@ def ${functionName}(*args, **kwargs):
               ).trim();
 
             return res.json({
-              status: 'online',
-              ponte: 'Ponte Alex v2',
-              version: '2.0.0',
+              status:
+                'online',
+
+              ponte:
+                'Ponte Alex v2',
+
+              version:
+                '2.0.0',
 
               authConfigured:
-                configuredSecret.length > 0,
+                configuredSecret.length >
+                0,
 
               authHeaderName:
                 'x-api-secret',
@@ -1557,14 +1839,24 @@ def ${functionName}(*args, **kwargs):
                 'Ponte Alex v2 online e preparada para integração externa segura via HTTPS.',
 
               security: {
-                isolatedStorage: true,
-                directoryTraversalProtected: true,
-                externalApiFree: true,
-                apiKeysRequired: false,
-                executionAuthenticationRequired: true,
-                overwriteOriginalProtected: true,
+                isolatedStorage:
+                  true,
+
+                directoryTraversalProtected:
+                  true,
+
+                externalApiFree:
+                  true,
+
+                apiKeysRequired:
+                  false,
+
+                overwriteOriginalProtected:
+                  true,
+
                 authConfigured:
-                  configuredSecret.length > 0,
+                  configuredSecret.length >
+                  0,
               },
 
               endpoints: {
@@ -1589,12 +1881,10 @@ def ${functionName}(*args, **kwargs):
             });
           }
         );
-      } catch (error: any) {
+      } catch (e: any) {
         return res.status(500).json({
           status: 'error',
-          error:
-            error?.message ||
-            'Erro no ping.',
+          error: e.message,
         });
       }
     }
@@ -1606,23 +1896,20 @@ def ${functionName}(*args, **kwargs):
 
   app.get(
     '/api/ponte/v2/resources',
-    (_req, res) => {
+    (req, res) => {
       try {
-        const memory =
+        const memUsage =
           getNodeProcessMemory();
 
         const systemMemory =
           getSystemMemoryInfo();
 
-        const disk =
-          getDiskInfo();
-
-        const originals =
+        const originalsInfo =
           calculateDirectorySize(
             originalsDir
           );
 
-        const processed =
+        const processedInfo =
           calculateDirectorySize(
             processedDir
           );
@@ -1652,68 +1939,46 @@ def ${functionName}(*args, **kwargs):
                   systemMemory.usagePercentage,
 
                 totalFormatted:
-                  systemMemory.totalFormatted,
+                  formatBytes(
+                    systemMemory.totalBytes
+                  ),
 
                 usedFormatted:
-                  systemMemory.usedFormatted,
+                  formatBytes(
+                    systemMemory.usedBytes
+                  ),
 
                 availableFormatted:
-                  systemMemory.availableFormatted,
-              },
-
-              storage: {
-                bridgeStorageBytes:
-                  disk.bridgeStorageBytes,
-
-                bridgeStorageFormatted:
-                  disk.bridgeStorageFormatted,
-
-                originalsBytes:
-                  disk.originalsBytes,
-
-                originalsFormatted:
-                  disk.originalsFormatted,
-
-                processedBytes:
-                  disk.processedBytes,
-
-                processedFormatted:
-                  disk.processedFormatted,
+                  formatBytes(
+                    systemMemory.availableBytes
+                  ),
               },
             },
 
             nodeProcess: {
               memory: {
                 rssBytes:
-                  memory.rss,
+                  memUsage.rss,
 
                 heapUsedBytes:
-                  memory.heapUsed,
+                  memUsage.heapUsed,
 
                 heapTotalBytes:
-                  memory.heapTotal,
-
-                externalBytes:
-                  memory.external,
-
-                arrayBuffersBytes:
-                  memory.arrayBuffers,
+                  memUsage.heapTotal,
 
                 rssFormatted:
-                  formatBytes(memory.rss),
+                  formatBytes(
+                    memUsage.rss
+                  ),
 
                 heapUsedFormatted:
-                  formatBytes(memory.heapUsed),
+                  formatBytes(
+                    memUsage.heapUsed
+                  ),
 
                 heapTotalFormatted:
-                  formatBytes(memory.heapTotal),
-
-                externalFormatted:
-                  formatBytes(memory.external),
-
-                arrayBuffersFormatted:
                   formatBytes(
-                    memory.arrayBuffers
+                    memUsage.heapTotal
                   ),
               },
 
@@ -1727,7 +1992,8 @@ def ${functionName}(*args, **kwargs):
                   `${Math.floor(
                     process.uptime() / 3600
                   )}h ${Math.floor(
-                    (process.uptime() % 3600) / 60
+                    (process.uptime() % 3600) /
+                      60
                   )}m ${Math.floor(
                     process.uptime() % 60
                   )}s`,
@@ -1740,15 +2006,15 @@ def ${functionName}(*args, **kwargs):
                   'storage/originals',
 
                 totalSizeBytes:
-                  originals.totalSize,
+                  originalsInfo.totalSize,
 
                 totalSizeFormatted:
                   formatBytes(
-                    originals.totalSize
+                    originalsInfo.totalSize
                   ),
 
                 fileCount:
-                  originals.fileCount,
+                  originalsInfo.fileCount,
               },
 
               processed: {
@@ -1756,31 +2022,31 @@ def ${functionName}(*args, **kwargs):
                   'storage/processed',
 
                 totalSizeBytes:
-                  processed.totalSize,
+                  processedInfo.totalSize,
 
                 totalSizeFormatted:
                   formatBytes(
-                    processed.totalSize
+                    processedInfo.totalSize
                   ),
 
                 fileCount:
-                  processed.fileCount,
+                  processedInfo.fileCount,
               },
 
               combined: {
                 totalSizeBytes:
-                  originals.totalSize +
-                  processed.totalSize,
+                  originalsInfo.totalSize +
+                  processedInfo.totalSize,
 
                 totalSizeFormatted:
                   formatBytes(
-                    originals.totalSize +
-                    processed.totalSize
+                    originalsInfo.totalSize +
+                      processedInfo.totalSize
                   ),
 
                 fileCount:
-                  originals.fileCount +
-                  processed.fileCount,
+                  originalsInfo.fileCount +
+                  processedInfo.fileCount,
               },
             },
           },
@@ -1789,53 +2055,83 @@ def ${functionName}(*args, **kwargs):
             maxJsonBodySizeLimit:
               '50MB',
 
-            pythonCommand:
-              PYTHON_COMMAND,
-
             pythonTimeoutSeconds:
-              EXECUTION_TIMEOUT_MS / 1000,
+              10,
 
             compilationTimeoutSeconds:
-              COMPILE_TIMEOUT_MS / 1000,
+              8,
 
             noFilesDeletedAutomatically:
               true,
 
             directoryTraversalProtected:
               true,
-
-            originalFilesNeverOverwritten:
-              true,
-
-            executionRequiresAuthentication:
-              true,
           },
         });
-      } catch (error: any) {
+      } catch (e: any) {
         return res.status(500).json({
           success: false,
           error:
-            `Erro ao obter diagnóstico de recursos: ${
-              error?.message ||
-              'erro desconhecido'
-            }`,
+            `Erro ao obter diagnóstico de recursos: ${e.message}`,
         });
       }
     }
   );
 
   // ============================================================
-  // PONTE ALEX v2 — PROCESSAMENTO PRINCIPAL
+  // PONTE ALEX V2 - PROCESSAMENTO
   // ============================================================
 
   app.post(
     '/api/ponte/v2/processar',
     (req, res) => {
-      if (!requireAuthentication(req, res)) {
-        return;
-      }
-
       try {
+        // ------------------------------------------------------
+        // AUTENTICAÇÃO
+        // ------------------------------------------------------
+
+        const configuredSecret =
+          getSystemConfiguredSecret();
+
+        const providedSecret =
+          extractProvidedSecret(req);
+
+        if (
+          configuredSecret.length > 0
+        ) {
+          if (
+            !providedSecret ||
+            providedSecret !==
+              configuredSecret
+          ) {
+            return res.status(401).json({
+              success: false,
+
+              ponteVersion:
+                'v2',
+
+              status:
+                'NAO_AUTORIZADO',
+
+              testPassed:
+                false,
+
+              error:
+                'Acesso não autorizado: segredo de autenticação ausente ou inválido.',
+
+              authRequired:
+                true,
+
+              authHeaderName:
+                'x-api-secret',
+            });
+          }
+        }
+
+        // ------------------------------------------------------
+        // BODY
+        // ------------------------------------------------------
+
         const body =
           req.body || {};
 
@@ -1869,30 +2165,39 @@ def ${functionName}(*args, **kwargs):
           body.replaceWith;
 
         // ------------------------------------------------------
-        // VALIDAÇÃO
+        // VALIDAÇÕES
         // ------------------------------------------------------
 
         if (
-          typeof fileContent !== 'string' ||
-          !fileContent.length
+          typeof fileContent !==
+            'string' ||
+          fileContent.length === 0
         ) {
           return res.status(400).json({
             success: false,
-            ponteVersion: 'v2',
+
+            ponteVersion:
+              'v2',
+
             error:
-              'Campo obrigatório ausente: "fileContent" ou "codigo" deve conter o código Python.',
+              'Campo obrigatório ausente: "fileContent" (ou "codigo" / "arquivo") deve ser uma string com o código Python.',
           });
         }
 
         if (
-          typeof instruction !== 'string' ||
-          !instruction.trim()
+          typeof instruction !==
+            'string' ||
+          instruction.trim().length ===
+            0
         ) {
           return res.status(400).json({
             success: false,
-            ponteVersion: 'v2',
+
+            ponteVersion:
+              'v2',
+
             error:
-              'Campo obrigatório ausente: "instruction" ou "instrucao".',
+              'Campo obrigatório ausente: "instruction" (ou "instrucao") com a descrição da alteração.',
           });
         }
 
@@ -1905,11 +2210,13 @@ def ${functionName}(*args, **kwargs):
 
         const safeOriginalName =
           sanitizeSafePythonFilename(
-            rawOriginalFilename,
+            String(
+              rawOriginalFilename
+            ),
             'entrada'
           );
 
-        const originalBase =
+        const baseOriginalWithoutExt =
           path.basename(
             safeOriginalName,
             '.py'
@@ -1918,26 +2225,27 @@ def ${functionName}(*args, **kwargs):
         let safeOutputName: string;
 
         if (
+          rawOutputFilename &&
           typeof rawOutputFilename ===
             'string' &&
           rawOutputFilename.trim()
         ) {
           safeOutputName =
             sanitizeSafePythonFilename(
-              rawOutputFilename,
+              rawOutputFilename.trim(),
               'saida_alex_v2'
             );
         } else {
           safeOutputName =
-            `${originalBase}_alex_v2_${timestamp}.py`;
+            `${baseOriginalWithoutExt}_alex_v2_${timestamp}.py`;
         }
 
         // ------------------------------------------------------
-        // 1. PRESERVAR ORIGINAL
+        // ORIGINAL
         // ------------------------------------------------------
 
         const originalSaveFilename =
-          `${originalBase}_original_${timestamp}.py`;
+          `${baseOriginalWithoutExt}_original_${timestamp}.py`;
 
         const originalSavePath =
           path.join(
@@ -1945,34 +2253,58 @@ def ${functionName}(*args, **kwargs):
             originalSaveFilename
           );
 
+        if (
+          !isInsideDirectory(
+            originalSavePath,
+            originalsDir
+          )
+        ) {
+          return res.status(403).json({
+            success: false,
+            error:
+              'Caminho do arquivo original inválido.',
+          });
+        }
+
         fs.writeFileSync(
           originalSavePath,
           fileContent,
           'utf8'
         );
 
-        const originalStats =
+        const origStats =
           fs.statSync(
             originalSavePath
           );
 
-        const originalHash =
-          sha256(fileContent);
-
-        // ------------------------------------------------------
-        // 2. ALTERAR LOCALMENTE
-        // ------------------------------------------------------
-
-        const transformation =
-          applyLocalTransformation(
-            fileContent,
-            instruction,
-            searchTarget,
-            replaceWith
+        const origHash =
+          calculateSha256(
+            fileContent
           );
 
         // ------------------------------------------------------
-        // 3. SALVAR RESULTADO
+        // ALTERAÇÃO
+        // ------------------------------------------------------
+
+        const {
+          newContent,
+          summary: transformSummary,
+        } =
+          applyLocalTransformation(
+            fileContent,
+            String(instruction),
+            typeof searchTarget ===
+              'string'
+              ? searchTarget
+              : undefined,
+            typeof replaceWith ===
+              'string'
+              ? replaceWith
+              : undefined
+          );
+
+        // ------------------------------------------------------
+        // ARQUIVO DE SAÍDA
         // ------------------------------------------------------
 
         let finalTargetFilename =
@@ -1984,6 +2316,20 @@ def ${functionName}(*args, **kwargs):
             finalTargetFilename
           );
 
+        if (
+          !isInsideDirectory(
+            processedFilePath,
+            processedDir
+          )
+        ) {
+          return res.status(403).json({
+            success: false,
+            error:
+              'Caminho do arquivo processado inválido.',
+          });
+        }
+
+        // Nunca sobrescrever.
         if (
           fs.existsSync(
             processedFilePath
@@ -2007,43 +2353,44 @@ def ${functionName}(*args, **kwargs):
 
         fs.writeFileSync(
           processedFilePath,
-          transformation.newContent,
+          newContent,
           'utf8'
         );
 
-        const processedStats =
+        const procStats =
           fs.statSync(
             processedFilePath
           );
 
-        const processedHash =
-          sha256(
-            transformation.newContent
+        const procHash =
+          calculateSha256(
+            newContent
           );
 
         // ------------------------------------------------------
-        // 4. COMPILAÇÃO PYTHON
+        // COMPILAÇÃO
         // ------------------------------------------------------
+
+        const python =
+          getPythonCommand();
 
         const startExecTime =
           Date.now();
 
-        execFile(
-          PYTHON_COMMAND,
-          [
-            '-m',
-            'py_compile',
-            processedFilePath,
-          ],
+        exec(
+          `${python} -m py_compile ${getShellSafePath(
+            processedFilePath
+          )}`,
           {
-            timeout:
-              COMPILE_TIMEOUT_MS,
-
+            timeout: 8000,
             maxBuffer:
               10 * 1024 * 1024,
           },
-
-          (compileErr, compileStdout, compileStderr) => {
+          (
+            compileErr,
+            compileStdout,
+            compileStderr
+          ) => {
             if (compileErr) {
               const durationMs =
                 Date.now() -
@@ -2071,8 +2418,7 @@ def ${functionName}(*args, **kwargs):
                   error:
                     (
                       compileStderr ||
-                      compileErr.message ||
-                      'Erro de compilação.'
+                      compileErr.message
                     ).trim(),
                 },
 
@@ -2084,13 +2430,13 @@ def ${functionName}(*args, **kwargs):
                       : 1,
 
                   stdout:
-                    compileStdout ||
-                    '',
+                    compileStdout || '',
 
                   stderr:
-                    compileStderr ||
-                    compileErr.message ||
-                    '',
+                    (
+                      compileStderr ||
+                      compileErr.message
+                    ).trim(),
 
                   durationMs,
                 },
@@ -2100,7 +2446,7 @@ def ${functionName}(*args, **kwargs):
                     originalSaveFilename,
 
                   size:
-                    originalStats.size,
+                    origStats.size,
 
                   lines:
                     fileContent.split(
@@ -2108,7 +2454,7 @@ def ${functionName}(*args, **kwargs):
                     ).length,
 
                   sha256:
-                    originalHash,
+                    origHash,
 
                   savedPath:
                     `storage/originals/${originalSaveFilename}`,
@@ -2122,29 +2468,28 @@ def ${functionName}(*args, **kwargs):
                     finalTargetFilename,
 
                   size:
-                    processedStats.size,
+                    procStats.size,
 
                   lines:
-                    transformation
-                      .newContent
-                      .split('\n')
-                      .length,
+                    newContent.split(
+                      '\n'
+                    ).length,
 
                   sha256:
-                    processedHash,
+                    procHash,
 
                   content:
-                    transformation
-                      .newContent,
+                    newContent,
 
                   downloadUrl:
-                    `/api/download/processed/${finalTargetFilename}`,
+                    `/api/download/processed/${encodeURIComponent(
+                      finalTargetFilename
+                    )}`,
                 },
 
                 instruction,
 
-                transformSummary:
-                  transformation.summary,
+                transformSummary,
 
                 neverOverwritten:
                   true,
@@ -2154,20 +2499,18 @@ def ${functionName}(*args, **kwargs):
             }
 
             // --------------------------------------------------
-            // 5. EXECUÇÃO RUNTIME
+            // EXECUÇÃO RUNTIME
             // --------------------------------------------------
 
-            execFile(
-              PYTHON_COMMAND,
-              [processedFilePath],
+            exec(
+              `${python} ${getShellSafePath(
+                processedFilePath
+              )}`,
               {
-                timeout:
-                  EXECUTION_TIMEOUT_MS,
-
+                timeout: 10000,
                 maxBuffer:
                   10 * 1024 * 1024,
               },
-
               (
                 execErr,
                 execStdout,
@@ -2217,12 +2560,10 @@ def ${functionName}(*args, **kwargs):
                         : 0,
 
                     stdout:
-                      execStdout ||
-                      '',
+                      execStdout || '',
 
                     stderr:
-                      execStderr ||
-                      '',
+                      execStderr || '',
 
                     durationMs,
                   },
@@ -2232,15 +2573,15 @@ def ${functionName}(*args, **kwargs):
                       originalSaveFilename,
 
                     size:
-                      originalStats.size,
+                      origStats.size,
 
                     lines:
-                      fileContent
-                        .split('\n')
-                        .length,
+                      fileContent.split(
+                        '\n'
+                      ).length,
 
                     sha256:
-                      originalHash,
+                      origHash,
 
                     savedPath:
                       `storage/originals/${originalSaveFilename}`,
@@ -2254,29 +2595,28 @@ def ${functionName}(*args, **kwargs):
                       finalTargetFilename,
 
                     size:
-                      processedStats.size,
+                      procStats.size,
 
                     lines:
-                      transformation
-                        .newContent
-                        .split('\n')
-                        .length,
+                      newContent.split(
+                        '\n'
+                      ).length,
 
                     sha256:
-                      processedHash,
+                      procHash,
 
                     content:
-                      transformation
-                        .newContent,
+                      newContent,
 
                     downloadUrl:
-                      `/api/download/processed/${finalTargetFilename}`,
+                      `/api/download/processed/${encodeURIComponent(
+                        finalTargetFilename
+                      )}`,
                   },
 
                   instruction,
 
-                  transformSummary:
-                    transformation.summary,
+                  transformSummary,
 
                   neverOverwritten:
                     true,
@@ -2287,22 +2627,87 @@ def ${functionName}(*args, **kwargs):
             );
           }
         );
-      } catch (error: any) {
+      } catch (err: any) {
         return res.status(500).json({
           success: false,
-          ponteVersion: 'v2',
+
+          ponteVersion:
+            'v2',
+
           error:
-            `Erro ao processar requisição na Ponte Alex v2: ${
-              error?.message ||
-              'erro desconhecido'
-            }`,
+            `Erro ao processar requisição na Ponte Alex v2: ${err.message}`,
         });
       }
     }
   );
 
   // ============================================================
-  // VITE / FRONTEND
+  // DOWNLOAD DE ARQUIVOS LEGADOS
+  // ============================================================
+
+  app.get(
+    '/api/download/:filename',
+    (req, res) => {
+      const filename =
+        path.basename(
+          req.params.filename
+        );
+
+      const allowed = [
+        'app_teste_copia.py',
+        'app_teste.py',
+        'teste_alex.py',
+      ];
+
+      if (
+        !allowed.includes(filename)
+      ) {
+        return res.status(403).send(
+          'Acesso negado ao arquivo solicitado.'
+        );
+      }
+
+      const filePath =
+        path.join(
+          process.cwd(),
+          filename
+        );
+
+      if (
+        !fs.existsSync(filePath)
+      ) {
+        return res.status(404).send(
+          'Arquivo não encontrado no disco.'
+        );
+      }
+
+      return res.download(
+        filePath,
+        filename
+      );
+    }
+  );
+
+  // ============================================================
+  // ROTA DE SAÚDE SIMPLES
+  // ============================================================
+
+  app.get(
+    '/api/health',
+    (req, res) => {
+      return res.json({
+        success: true,
+        status: 'online',
+        ponte:
+          'Ponte Alex v2',
+        timestamp:
+          Date.now(),
+      });
+    }
+  );
+
+  // ============================================================
+  // VITE
   // ============================================================
 
   if (
@@ -2334,40 +2739,21 @@ def ${functionName}(*args, **kwargs):
       )
     );
 
-    /*
-     * Fallback SPA.
-     *
-     * Usamos app.use em vez de app.get('*')
-     * para evitar problemas de compatibilidade
-     * com versões recentes do Express/path-to-regexp.
-     */
-    app.use(
-      (_req, res) => {
-        const indexPath =
+    app.get(
+      '*',
+      (req, res) => {
+        res.sendFile(
           path.join(
             distPath,
             'index.html'
-          );
-
-        if (
-          fs.existsSync(
-            indexPath
           )
-        ) {
-          return res.sendFile(
-            indexPath
-          );
-        }
-
-        return res.status(404).send(
-          'Frontend não encontrado.'
         );
       }
     );
   }
 
   // ============================================================
-  // INICIALIZAÇÃO
+  // START SERVER
   // ============================================================
 
   app.listen(
@@ -2375,41 +2761,48 @@ def ${functionName}(*args, **kwargs):
     '0.0.0.0',
     () => {
       console.log(
-        `Ponte Alex v2 rodando na porta ${PORT}`
+        `Ponte Alex v2 online em http://localhost:${PORT}`
       );
 
       console.log(
-        `Python configurado: ${PYTHON_COMMAND}`
-      );
-
-      console.log(
-        `Autenticação configurada: ${
-          getConfiguredSecret()
-            ? 'SIM'
-            : 'NÃO'
+        `Ambiente: ${
+          process.env.NODE_ENV ||
+          'development'
         }`
       );
 
       console.log(
-        'Armazenamento original: storage/originals'
+        `Autenticação: ${
+          getSystemConfiguredSecret()
+            ? 'ATIVA'
+            : 'DESATIVADA'
+        }`
       );
 
       console.log(
-        'Armazenamento processado: storage/processed'
+        `Python: ${getPythonCommand()}`
+      );
+
+      console.log(
+        'Armazenamento de originais: storage/originals'
+      );
+
+      console.log(
+        'Armazenamento de processados: storage/processed'
       );
     }
   );
 }
 
 // ============================================================
-// TRATAMENTO DE ERRO DE INICIALIZAÇÃO
+// ERRO DE INICIALIZAÇÃO
 // ============================================================
 
 startServer().catch(
-  (error) => {
+  (err) => {
     console.error(
-      'Failed to start Ponte Alex v2:',
-      error
+      'Failed to start server:',
+      err
     );
 
     process.exitCode = 1;
