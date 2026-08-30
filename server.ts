@@ -4,6 +4,7 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { exec } from 'child_process';
 import { createServer as createViteServer } from 'vite';
+import os from 'os';
 
 async function startServer() {
   const app = express();
@@ -20,6 +21,7 @@ async function startServer() {
     next();
   });
 
+  // Limit JSON body size to 50MB for security (prevents excessive RAM consumption)
   app.use(express.json({ limit: '50mb' }));
 
   // Ensure storage directories exist
@@ -27,6 +29,79 @@ async function startServer() {
   const processedDir = path.join(process.cwd(), 'storage', 'processed');
   fs.mkdirSync(originalsDir, { recursive: true });
   fs.mkdirSync(processedDir, { recursive: true });
+
+  // =========================================================================
+  // Helper functions for resource diagnostics
+  // =========================================================================
+
+  function calculateDirectorySize(dirPath: string): { totalSize: number; fileCount: number } {
+    let totalSize = 0;
+    let fileCount = 0;
+    try {
+      if (!fs.existsSync(dirPath)) {
+        return { totalSize: 0, fileCount: 0 };
+      }
+      const files = fs.readdirSync(dirPath);
+      for (const file of files) {
+        const filePath = path.join(dirPath, file);
+        try {
+          const stat = fs.statSync(filePath);
+          if (stat.isFile()) {
+            totalSize += stat.size;
+            fileCount++;
+          }
+        } catch (e) {
+          // Skip files that can't be accessed
+        }
+      }
+    } catch (e) {
+      // If directory can't be read, return zero
+    }
+    return { totalSize, fileCount };
+  }
+
+  function getNodeProcessMemory(): {
+    rss: number;
+    heapUsed: number;
+    heapTotal: number;
+  } {
+    const memUsage = process.memoryUsage();
+    return {
+      rss: memUsage.rss,
+      heapUsed: memUsage.heapUsed,
+      heapTotal: memUsage.heapTotal,
+    };
+  }
+
+  function getDiskResourceInfo(): {
+    totalBytes: number;
+    usedBytes: number;
+    availableBytes: number;
+    usagePercentage: number;
+  } {
+    // Use available system info based on OS
+    const totalMemory = os.totalmem();
+    const freeMemory = os.freemem();
+    const usedMemory = totalMemory - freeMemory;
+
+    return {
+      totalBytes: totalMemory,
+      usedBytes: usedMemory,
+      availableBytes: freeMemory,
+      usagePercentage: Number(((usedMemory / totalMemory) * 100).toFixed(2)),
+    };
+  }
+
+  function formatBytes(bytes: number): string {
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let size = bytes;
+    let unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+    return `${size.toFixed(2)} ${units[unitIndex]}`;
+  }
 
   function getFileStats(filename: string) {
     const filePath = path.join(process.cwd(), filename);
@@ -288,7 +363,7 @@ except Exception as e:
     if (funcMatch && replacedCount === 0 && !searchTarget) {
       const funcName = funcMatch[1];
       const funcDetails = funcMatch[2].trim();
-      const newFunctionCode = `\n\ndef ${funcName}(*args, **kwargs):\n    """Função gerada pela Ponte Alex v1: ${funcDetails || 'Implementação automatizada'}"""\n    print("[Ponte Alex v1] Executando função: ${funcName}")\n    return True\n`;
+      const newFunctionCode = `\n\ndef ${funcName}(*args, **kwargs):\n    """Função gerada pela Ponte Alex v1: ${funcDetails || 'Implementação automatizada'}"""\n    print("[Ponte Alex v1] Executa[...]
       modified += newFunctionCode;
       summaryParts.push(`Adicionada nova função 'def ${funcName}'`);
     }
@@ -324,7 +399,7 @@ except Exception as e:
     // If nothing matched and no direct searchTarget, apply general structured modification
     if (summaryParts.length === 0) {
       const timestamp = new Date().toLocaleString('pt-BR');
-      const banner = `# ========================================================\n# [PONTE ALEX v1] Alteração Aplicada\n# Instrução: ${instruction}\n# Data: ${timestamp}\n# ========================================================\n`;
+      const banner = `# ========================================================\n# [PONTE ALEX v1] Alteração Aplicada\n# Instrução: ${instruction}\n# Data: ${timestamp}\n# =======================[...]
       
       // If the instruction contains python statements, append them
       if (instruction.includes('\n') || instruction.includes('def ') || instruction.includes('print(') || instruction.includes('=')) {
@@ -656,6 +731,7 @@ except Exception as e:
             ping: 'GET /api/ponte/v2/ping',
             processar: 'POST /api/ponte/v2/processar',
             history: 'GET /api/ponte/history',
+            resources: 'GET /api/ponte/v2/resources',
             downloadProcessed: 'GET /api/download/processed/:filename',
             downloadOriginal: 'GET /api/download/originals/:filename',
           },
@@ -663,6 +739,83 @@ except Exception as e:
       });
     } catch (e: any) {
       return res.status(500).json({ status: 'error', error: e.message });
+    }
+  });
+
+  // API: Resource diagnostics for RAM and storage
+  app.get('/api/ponte/v2/resources', (req, res) => {
+    try {
+      const memUsage = getNodeProcessMemory();
+      const diskInfo = getDiskResourceInfo();
+      const originalsInfo = calculateDirectorySize(originalsDir);
+      const processedInfo = calculateDirectorySize(processedDir);
+
+      return res.json({
+        success: true,
+        ponte: 'Ponte Alex v2',
+        timestamp: Date.now(),
+        resources: {
+          system: {
+            // System RAM (total, used, available)
+            memory: {
+              totalBytes: diskInfo.totalBytes,
+              usedBytes: diskInfo.usedBytes,
+              availableBytes: diskInfo.availableBytes,
+              usagePercentage: diskInfo.usagePercentage,
+              totalFormatted: formatBytes(diskInfo.totalBytes),
+              usedFormatted: formatBytes(diskInfo.usedBytes),
+              availableFormatted: formatBytes(diskInfo.availableBytes),
+            },
+          },
+          nodeProcess: {
+            // Node.js process memory usage
+            memory: {
+              rssBytes: memUsage.rss,
+              heapUsedBytes: memUsage.heapUsed,
+              heapTotalBytes: memUsage.heapTotal,
+              rssFormatted: formatBytes(memUsage.rss),
+              heapUsedFormatted: formatBytes(memUsage.heapUsed),
+              heapTotalFormatted: formatBytes(memUsage.heapTotal),
+            },
+            uptime: {
+              uptimeSeconds: Math.floor(process.uptime()),
+              uptimeFormatted: `${Math.floor(process.uptime() / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m ${Math.floor(process.uptime() % 60)}s`,
+            },
+          },
+          storage: {
+            // Storage directory diagnostics
+            originals: {
+              path: 'storage/originals',
+              totalSizeBytes: originalsInfo.totalSize,
+              totalSizeFormatted: formatBytes(originalsInfo.totalSize),
+              fileCount: originalsInfo.fileCount,
+            },
+            processed: {
+              path: 'storage/processed',
+              totalSizeBytes: processedInfo.totalSize,
+              totalSizeFormatted: formatBytes(processedInfo.totalSize),
+              fileCount: processedInfo.fileCount,
+            },
+            combined: {
+              totalSizeBytes: originalsInfo.totalSize + processedInfo.totalSize,
+              totalSizeFormatted: formatBytes(originalsInfo.totalSize + processedInfo.totalSize),
+              fileCount: originalsInfo.fileCount + processedInfo.fileCount,
+            },
+          },
+        },
+        configuration: {
+          maxJsonBodySizeLimit: '50MB',
+          pythonTimeoutSeconds: 10,
+          compilationTimeoutSeconds: 8,
+          noFilesDeletedAutomatically: true,
+          directoryTraversalProtected: true,
+        },
+      });
+    } catch (e: any) {
+      return res.status(500).json({
+        success: false,
+        error: `Erro ao obter diagnóstico de recursos: ${e.message}`,
+      });
     }
   });
 
@@ -906,4 +1059,3 @@ except Exception as e:
 startServer().catch((err) => {
   console.error('Failed to start server:', err);
 });
-
