@@ -2154,29 +2154,30 @@ else:
         // ------------------------------------------------------
 
         const fileContent =
-          (
-    fileContentRaw
-  );
+          corrigirTextoUTF8(
+            fileContentRaw
+          );
 
-const instruction =
-  corrigirTextoUTF8(
-    instructionRaw
-  );
+        const instruction =
+          corrigirTextoUTF8(
+            instructionRaw
+          );
 
-const searchTarget =
-  typeof body.searchTarget === 'string'
-    ? corrigirTextoUTF8(
-        body.searchTarget
-      )
-    : undefined;
+        const searchTarget =
+          typeof body.searchTarget === 'string'
+            ? corrigirTextoUTF8(
+                body.searchTarget
+              )
+            : undefined;
 
-const replaceWith =
-  typeof body.replaceWith === 'string'
-    ? corrigirTextoUTF8(
-        body.replaceWith
-      )
-    : undefined;
-
+        const replaceWith =
+          typeof body.replaceWith === 'string'
+            ? corrigirTextoUTF8(
+                body.replaceWith
+              )
+            : undefined;
+          
+   
         // ------------------------------------------------------
         // VALIDAÇÕES
         // ------------------------------------------------------
