@@ -2790,14 +2790,22 @@ else:
       try {
         const { filename, code } = req.body ?? {};
 
+        // --------------------------------------------------------
+        // 🔤 CORREÇÃO UTF-8
+        // --------------------------------------------------------
+
         const filenameCorrigido =
           corrigirTextoUTF8(filename);
 
         const codeCorrigido =
           corrigirTextoUTF8(code);
 
+        // --------------------------------------------------------
+        // 🔎 VALIDAÇÃO
+        // --------------------------------------------------------
+
         if (
-          typeof filenameCorrigido !== "string"
+          typeof filenameCorrigido !== "string" ||
           !filenameCorrigido.trim()
         ) {
           return res.status(400).json({
@@ -2806,7 +2814,9 @@ else:
           });
         }
 
-        if (typeof code !== "string") {
+        if (
+          typeof codeCorrigido !== "string"
+        ) {
           return res.status(400).json({
             ok: false,
             error: "Informe o código."
@@ -2818,7 +2828,7 @@ else:
         // --------------------------------------------------------
 
         const safeFilename =
-          filename
+          filenameCorrigido
             .trim()
             .replace(/\\/g, "/")
             .split("/")
@@ -2838,9 +2848,15 @@ else:
           "text/plain; charset=utf-8"
         );
 
-        // Envia explicitamente os bytes em UTF-8
+        // --------------------------------------------------------
+        // 💾 Envia o código corrigido em UTF-8
+        // --------------------------------------------------------
+
         return res.send(
-          Buffer.from(code, "utf8")
+          Buffer.from(
+            codeCorrigido,
+            "utf8"
+          )
         );
 
       } catch (error) {
