@@ -971,6 +971,7 @@ else:
       replacedCount++;
     }
     // ----------------------------------------------------------
+    // ----------------------------------------------------------
     // 8. NADA RECONHECIDO
     // ----------------------------------------------------------
 
@@ -978,60 +979,31 @@ else:
       const timestamp =
         new Date().toLocaleString('pt-BR');
 
-      const safeInstruction =
-        String(instruction);
+      const escapedInstruction =
+        instruction
+          .replace(/\\/g, '\\\\')
+          .replace(/"/g, '\\"');
 
-      const banner =
-        '# ========================================================\n' +
-        '# [PONTE ALEX v2] Alteração Aplicada\n' +
-        '# Instrução: ' +
-        safeInstruction +
-        '\n' +
-        '# Data: ' +
-        timestamp +
-        '\n' +
-        '# ========================================================\n';
+      // Não adiciona mais banner ou comentário
+      // com a instrução recebida.
+      // A instrução deve ser tratada apenas
+      // como comando de transformação.
 
-      if (
-        safeInstruction.includes('\n') ||
-        safeInstruction.includes('def ') ||
-        safeInstruction.includes('print(') ||
-        safeInstruction.includes('=')
-      ) {
-        modified =
-          banner +
-          modified +
-          '\n\n' +
-          '# --- Código anexado pela instrução ---\n' +
-          safeInstruction +
-          '\n';
+      modified =
+        modified +
+        `\nprint("[Ponte Alex v2] Modificação executada: ${escapedInstruction}")\n`;
 
-        summaryParts.push(
-          'Instrução e código adicionados ao arquivo.'
-        );
-      } else {
-        const escapedInstruction =
-          safeInstruction
-            .replace(/\\/g, '\\\\')
-            .replace(/"/g, '\\"');
-
-        modified =
-          banner +
-          modified +
-          '\n' +
-          '# Registro da alteração: ' +
-          safeInstruction +
-          '\n' +
-          'print("[Ponte Alex v2] Modificação executada: ' +
-          escapedInstruction +
-          '")\n';
-
-        summaryParts.push(
-          'Modificação registrada e comando de validação inserido.'
-        );
-      }
+      summaryParts.push(
+        'Modificação registrada.'
+      );
     }
 
+    return {
+      newContent: modified,
+      summary:
+        summaryParts.join('; '),
+    };
+  }
   // ============================================================
   // PONTE ALEX v1
   // ============================================================
