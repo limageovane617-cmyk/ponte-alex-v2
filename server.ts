@@ -2752,6 +2752,7 @@ else:
     );
   }
   // ============================================================
+  // ============================================================
   // 🔤 CORREÇÃO AUTOMÁTICA DE TEXTO UTF-8
   // ============================================================
 
@@ -2760,24 +2761,47 @@ else:
       return String(texto ?? '');
     }
 
-    // Corrige casos como:
-    // "OlÃ¡"     -> "Olá"
-    // "cÃ³digo"  -> "código"
-    // "InstruÃ§Ã£o" -> "Instrução"
+    // Não altera texto que aparentemente já está correto.
+    const sinaisMojibake = [
+      'Ã',
+      'Â',
+      'â€',
+      'â€™',
+      'â€œ',
+      'â€',
+      'â€“',
+      'â€”',
+      'â€¦',
+    ];
 
-    if (
-      !texto.includes('Ã') &&
-      !texto.includes('Â') &&
-      !texto.includes('â')
-    ) {
+    const pareceMojibake =
+      sinaisMojibake.some((sinal) =>
+        texto.includes(sinal)
+      );
+
+    if (!pareceMojibake) {
       return texto;
     }
 
     try {
-      return Buffer.from(texto, 'latin1').toString('utf8');
+      const corrigido =
+        Buffer.from(
+          texto,
+          'latin1'
+        ).toString('utf8');
+
+      // Só aceita a conversão se o resultado
+      // não contiver caracteres inválidos.
+      if (
+        !corrigido.includes('\uFFFD')
+      ) {
+        return corrigido;
+      }
     } catch {
-      return texto;
+      // Mantém o texto original.
     }
+
+    return texto;
   }
   // ============================================================
   // PONTE ALEX V2 — CRIAR ARQUIVO PARA DOWNLOAD
