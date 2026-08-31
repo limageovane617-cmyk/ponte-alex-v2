@@ -287,11 +287,12 @@ async function startServer() {
   }
 
   function getSystemConfiguredSecret(): string {
-    return (
-      process.env.PONTE_API_SECRET ||
-      process.env.ALEX_BRIDGE_SECRET ||
-      ''
-    ).trim();
+  return (
+    process.env.PONTE_API_SECRET ||
+    process.env.PONTE_API_SECRETO ||
+    process.env.ALEX_BRIDGE_SECRET ||
+    ''
+  ).trim();
   }
 
   function isInsideDirectory(
