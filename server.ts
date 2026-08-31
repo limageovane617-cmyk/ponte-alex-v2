@@ -2757,6 +2757,7 @@ else:
 
   app.post(
     "/api/ponte/v2/criar-arquivo",
+    express.json({ limit: "10mb" }),
     (req, res) => {
       try {
         const { filename, code } = req.body ?? {};
@@ -2778,6 +2779,7 @@ else:
           });
         }
 
+        // Impede caminhos como ../../arquivo
         const safeFilename =
           filename
             .trim()
