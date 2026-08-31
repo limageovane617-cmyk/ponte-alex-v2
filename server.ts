@@ -2790,6 +2790,12 @@ else:
       try {
         const { filename, code } = req.body ?? {};
 
+        const filenameCorrigido =
+          corrigirTextoUTF8(filename);
+
+        const codeCorrigido =
+          corrigirTextoUTF8(code);
+
         if (
           typeof filename !== "string" ||
           !filename.trim()
