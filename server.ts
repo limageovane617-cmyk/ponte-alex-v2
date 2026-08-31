@@ -293,8 +293,7 @@ async function startServer() {
     process.env.ALEX_BRIDGE_SECRET ||
     ''
   ).trim();
-  }
-
+ }
   function isInsideDirectory(
     filePath: string,
     directory: string
