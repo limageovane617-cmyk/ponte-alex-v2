@@ -2751,6 +2751,65 @@ else:
       }
     );
   }
+  // ============================================================
+  // PONTE ALEX V2 — CRIAR ARQUIVO PARA DOWNLOAD
+  // ============================================================
+
+  app.post(
+    "/api/ponte/v2/criar-arquivo",
+    (req, res) => {
+      try {
+        const { filename, code } = req.body ?? {};
+
+        if (
+          typeof filename !== "string" ||
+          !filename.trim()
+        ) {
+          return res.status(400).json({
+            ok: false,
+            error: "Informe o nome do arquivo."
+          });
+        }
+
+        if (typeof code !== "string") {
+          return res.status(400).json({
+            ok: false,
+            error: "Informe o código."
+          });
+        }
+
+        const safeFilename =
+          filename
+            .trim()
+            .replace(/\\/g, "/")
+            .split("/")
+            .pop() || "codigo.txt";
+
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${safeFilename}"`
+        );
+
+        res.setHeader(
+          "Content-Type",
+          "application/octet-stream"
+        );
+
+        return res.send(code);
+
+      } catch (error) {
+        console.error(
+          "Erro ao criar arquivo:",
+          error
+        );
+
+        return res.status(500).json({
+          ok: false,
+          error: "Não foi possível criar o arquivo."
+        });
+      }
+    }
+  );
 
   // ============================================================
   // START SERVER
