@@ -1846,94 +1846,188 @@ else:
   );
 
   // ============================================================
-  // DOWNLOAD PROCESSADO
+  // DOWNLOAD PROCESSADO — UTF-8
   // ============================================================
 
   app.get(
     '/api/download/processed/:filename',
     (req, res) => {
-      const filename =
-        path.basename(
-          req.params.filename
+      try {
+        const filename =
+          path.basename(
+            req.params.filename
+          );
+
+        const filePath =
+          path.join(
+            processedDir,
+            filename
+          );
+
+        if (
+          !isInsideDirectory(
+            filePath,
+            processedDir
+          )
+        ) {
+          return res.status(403).send(
+            'Acesso negado.'
+          );
+        }
+
+        if (
+          !fs.existsSync(
+            filePath
+          )
+        ) {
+          return res.status(404).send(
+            'Arquivo processado não encontrado.'
+          );
+        }
+
+        // --------------------------------------------------------
+        // FORÇAR DOWNLOAD COMO PYTHON UTF-8
+        // --------------------------------------------------------
+
+        res.setHeader(
+          'Content-Type',
+          'text/x-python; charset=utf-8'
         );
 
-      const filePath =
-        path.join(
-          processedDir,
-          filename
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="${filename}"`
         );
 
-      if (
-        !isInsideDirectory(
-          filePath,
-          processedDir
-        )
-      ) {
-        return res.status(403).send(
-          'Acesso negado.'
+        res.setHeader(
+          'Content-Encoding',
+          'identity'
+        );
+
+        // --------------------------------------------------------
+        // LER O ARQUIVO COMO UTF-8
+        // --------------------------------------------------------
+
+        const content =
+          fs.readFileSync(
+            filePath,
+            'utf8'
+          );
+
+        // --------------------------------------------------------
+        // ENVIAR NOVAMENTE EM UTF-8
+        // --------------------------------------------------------
+
+        return res.send(
+          Buffer.from(
+            content,
+            'utf8'
+          )
+        );
+
+      } catch (error: any) {
+        console.error(
+          'Erro no download do arquivo processado:',
+          error
+        );
+
+        return res.status(500).send(
+          `Erro ao baixar arquivo: ${error.message}`
         );
       }
-
-      if (
-        !fs.existsSync(
-          filePath
-        )
-      ) {
-        return res.status(404).send(
-          'Arquivo processado não encontrado.'
-        );
-      }
-
-      return res.download(
-        filePath,
-        filename
-      );
     }
   );
 
   // ============================================================
-  // DOWNLOAD ORIGINAL
+  // DOWNLOAD ORIGINAL — UTF-8
   // ============================================================
 
   app.get(
     '/api/download/originals/:filename',
     (req, res) => {
-      const filename =
-        path.basename(
-          req.params.filename
+      try {
+        const filename =
+          path.basename(
+            req.params.filename
+          );
+
+        const filePath =
+          path.join(
+            originalsDir,
+            filename
+          );
+
+        if (
+          !isInsideDirectory(
+            filePath,
+            originalsDir
+          )
+        ) {
+          return res.status(403).send(
+            'Acesso negado.'
+          );
+        }
+
+        if (
+          !fs.existsSync(
+            filePath
+          )
+        ) {
+          return res.status(404).send(
+            'Arquivo original não encontrado.'
+          );
+        }
+
+        // --------------------------------------------------------
+        // FORÇAR DOWNLOAD COMO PYTHON UTF-8
+        // --------------------------------------------------------
+
+        res.setHeader(
+          'Content-Type',
+          'text/x-python; charset=utf-8'
         );
 
-      const filePath =
-        path.join(
-          originalsDir,
-          filename
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename="${filename}"`
         );
 
-      if (
-        !isInsideDirectory(
-          filePath,
-          originalsDir
-        )
-      ) {
-        return res.status(403).send(
-          'Acesso negado.'
+        res.setHeader(
+          'Content-Encoding',
+          'identity'
+        );
+
+        // --------------------------------------------------------
+        // LER COMO UTF-8
+        // --------------------------------------------------------
+
+        const content =
+          fs.readFileSync(
+            filePath,
+            'utf8'
+          );
+
+        // --------------------------------------------------------
+        // ENVIAR EM UTF-8
+        // --------------------------------------------------------
+
+        return res.send(
+          Buffer.from(
+            content,
+            'utf8'
+          )
+        );
+
+      } catch (error: any) {
+        console.error(
+          'Erro no download do arquivo original:',
+          error
+        );
+
+        return res.status(500).send(
+          `Erro ao baixar arquivo: ${error.message}`
         );
       }
-
-      if (
-        !fs.existsSync(
-          filePath
-        )
-      ) {
-        return res.status(404).send(
-          'Arquivo original não encontrado.'
-        );
-      }
-
-      return res.download(
-        filePath,
-        filename
-      );
     }
   );
 
