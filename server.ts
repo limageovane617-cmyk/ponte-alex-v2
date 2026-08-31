@@ -905,7 +905,7 @@ else:
   );
 
   // ============================================================
-  // TRANSFORMAÇÃO LOCAL
+  // TRANSFORMAÇÃO LOCAL — UTF-8 SEGURO
   // ============================================================
 
   function applyLocalTransformation(
@@ -917,11 +917,21 @@ else:
     newContent: string;
     summary: string;
   } {
+    // Mantém o conteúdo como Unicode.
+    // A gravação UTF-8 é feita pelo fs.writeFileSync(..., 'utf8').
+
     let modified =
-      originalContent;
+      String(originalContent ?? '');
+
+    const cleanInstruction =
+      String(instruction ?? '').trim();
 
     const summaryParts: string[] =
       [];
+
+    // ============================================================
+    // SUBSTITUIÇÃO EXATA
+    // ============================================================
 
     if (
       searchTarget !==
@@ -954,12 +964,9 @@ else:
       }
     }
 
-    const instrLower =
-      instruction
-        .toLowerCase()
-        .trim();
-
-    void instrLower;
+    // ============================================================
+    // SUBSTITUIR / TROCAR / MUDAR / ALTERAR
+    // ============================================================
 
     const replacePattern =
       /(?:substituir|trocar|mudar|alterar|replace)\s+["'`]([^"'`]+)["'`]\s+(?:por|para|with)\s+["'`]([^"'`]+)["'`]/gi;
@@ -972,7 +979,7 @@ else:
     while (
       (match =
         replacePattern.exec(
-          instruction
+          cleanInstruction
         )) !== null
     ) {
       const fromText =
@@ -988,8 +995,12 @@ else:
       ) {
         modified =
           modified
-            .split(fromText)
-            .join(toText);
+            .split(
+              fromText
+            )
+            .join(
+              toText
+            );
 
         summaryParts.push(
           `Substituído "${fromText}" por "${toText}"`
@@ -1003,11 +1014,15 @@ else:
       }
     }
 
+    // ============================================================
+    // ALTERAR VALOR DE VARIÁVEL
+    // ============================================================
+
     const variableValuePattern =
       /(?:alterar|mudar|trocar|substituir)\s+(?:somente\s+)?(?:o\s+)?valor\s+da\s+vari[áa]vel\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+de\s+(-?\d+(?:\.\d+)?)\s+para\s+(-?\d+(?:\.\d+)?)/i;
 
     const variableValueMatch =
-      instruction.match(
+      cleanInstruction.match(
         variableValuePattern
       );
 
@@ -1083,11 +1098,15 @@ else:
       }
     }
 
+    // ============================================================
+    // ADICIONAR FUNÇÃO
+    // ============================================================
+
     const funcPattern =
       /(?:adicionar|criar)\s+fun[çc][ãa]o\s+([a-zA-Z0-9_]+)\s*[:(]?([\s\S]*)/i;
 
     const funcMatch =
-      instruction.match(
+      cleanInstruction.match(
         funcPattern
       );
 
@@ -1104,10 +1123,19 @@ else:
         '';
 
       const safeDescription =
-        funcDetails.replace(
-          /"""/g,
-          '\\"\\"\\"'
-        );
+        funcDetails
+          .replace(
+            /\\/g,
+            '\\\\'
+          )
+          .replace(
+            /"""/g,
+            '\\"\\"\\"'
+          )
+          .replace(
+            /\r?\n/g,
+            ' '
+          );
 
       const newFunctionCode =
         `\n\n` +
@@ -1126,11 +1154,15 @@ else:
       replacedCount++;
     }
 
+    // ============================================================
+    // ADICIONAR PRINT / MENSAGEM / LOG
+    // ============================================================
+
     const printPattern =
       /(?:adicionar|inserir|colocar)\s+(?:print|mensagem|log)[:\s]+["'`]([^"'`]+)["'`]/i;
 
     const printMatch =
-      instruction.match(
+      cleanInstruction.match(
         printPattern
       );
 
@@ -1160,11 +1192,15 @@ else:
       replacedCount++;
     }
 
+    // ============================================================
+    // ADICIONAR NO INÍCIO
+    // ============================================================
+
     const prependPattern =
       /(?:adicionar|inserir|prepend)\s+no\s+in[ií]cio[:\s]+([\s\S]+)/i;
 
     const prependMatch =
-      instruction.match(
+      cleanInstruction.match(
         prependPattern
       );
 
@@ -1186,11 +1222,15 @@ else:
       replacedCount++;
     }
 
+    // ============================================================
+    // ADICIONAR NO FINAL
+    // ============================================================
+
     const appendPattern =
       /(?:adicionar|inserir|append)\s+(?:no\s+final|ao\s+fim)[:\s]+([\s\S]+)/i;
 
     const appendMatch =
-      instruction.match(
+      cleanInstruction.match(
         appendPattern
       );
 
@@ -1212,12 +1252,16 @@ else:
       replacedCount++;
     }
 
+    // ============================================================
+    // NENHUMA TRANSFORMAÇÃO ESPECÍFICA
+    // ============================================================
+
     if (
       summaryParts.length ===
       0
     ) {
       const escapedInstruction =
-        instruction
+        cleanInstruction
           .replace(
             /\\/g,
             '\\\\'
@@ -1234,6 +1278,21 @@ else:
         'Modificação registrada.'
       );
     }
+
+    // ============================================================
+    // NORMALIZAÇÃO DAS QUEBRAS DE LINHA
+    // ============================================================
+
+    modified =
+      modified
+        .replace(
+          /\r\n/g,
+          '\n'
+        )
+        .replace(
+          /\r/g,
+          '\n'
+        );
 
     return {
       newContent:
