@@ -2766,6 +2766,12 @@ else:
           corrigirTextoUTF8(
             instructionRaw
           );
+        console.log('===== UTF8 DIAGNÓSTICO =====');
+        console.log('ANTES fileContentRaw:', fileContentRaw);
+        console.log('DEPOIS fileContent:', fileContent);
+        console.log('ANTES instructionRaw:', instructionRaw);
+        console.log('DEPOIS instruction:', instruction);
+        console.log('============================');
 
         const searchTarget =
           typeof body.searchTarget ===
