@@ -2798,7 +2798,7 @@ else:
 
         if (
           typeof filenameCorrigido !== "string"
-          !filename.trim()
+          !filenameCorrigido.trim()
         ) {
           return res.status(400).json({
             ok: false,
