@@ -970,69 +970,67 @@ else:
 
       replacedCount++;
     }
-
     // ----------------------------------------------------------
     // 8. NADA RECONHECIDO
     // ----------------------------------------------------------
 
     if (summaryParts.length === 0) {
       const timestamp =
-        new Date().toLocaleString(
-          'pt-BR'
-        );
+        new Date().toLocaleString('pt-BR');
 
-      const escapedInstruction =
-        instruction.replace(
-          /\\/g,
-          '\\\\'
-        ).replace(
-          /"/g,
-          '\\"'
-        );
+      const safeInstruction =
+        String(instruction);
 
       const banner =
-        `# ========================================================\n` +
-        `# [PONTE ALEX v2] Alteração Aplicada\n` +
-        `# Instrução: ${instruction}\n` +
-        `# Data: ${timestamp}\n` +
-        `# ========================================================\n`;
+        '# ========================================================\n' +
+        '# [PONTE ALEX v2] Alteração Aplicada\n' +
+        '# Instrução: ' +
+        safeInstruction +
+        '\n' +
+        '# Data: ' +
+        timestamp +
+        '\n' +
+        '# ========================================================\n';
 
       if (
-        instruction.includes('\n') ||
-        instruction.includes('def ') ||
-        instruction.includes('print(') ||
-        instruction.includes('=')
+        safeInstruction.includes('\n') ||
+        safeInstruction.includes('def ') ||
+        safeInstruction.includes('print(') ||
+        safeInstruction.includes('=')
       ) {
         modified =
           banner +
           modified +
-          `\n\n` +
-          `# --- Código anexado pela instrução ---\n` +
-          instruction +
-          `\n`;
+          '\n\n' +
+          '# --- Código anexado pela instrução ---\n' +
+          safeInstruction +
+          '\n';
 
         summaryParts.push(
           'Instrução e código adicionados ao arquivo.'
         );
       } else {
+        const escapedInstruction =
+          safeInstruction
+            .replace(/\\/g, '\\\\')
+            .replace(/"/g, '\\"');
+
         modified =
           banner +
           modified +
-          `\n# Registro da alteração: ${instruction}\n` +
-          `print("[Ponte Alex v2] Modificação executada: ${escapedInstruction}")\n`;
+          '\n' +
+          '# Registro da alteração: ' +
+          safeInstruction +
+          '\n' +
+          'print("[Ponte Alex v2] Modificação executada: ' +
+          escapedInstruction +
+          '")\n';
 
         summaryParts.push(
           'Modificação registrada e comando de validação inserido.'
         );
       }
     }
-
-    return {
-      newContent: modified,
-      summary:
-        summaryParts.join('; '),
-    };
-  }
 
   // ============================================================
   // PONTE ALEX v1
