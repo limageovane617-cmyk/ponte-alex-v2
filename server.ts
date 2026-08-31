@@ -2800,11 +2800,12 @@ else:
   // ============================================================
 
   app.post(
-    "/api/ponte/v2/criar-arquivo",
-    express.json({ limit: "10mb" }),
+    '/api/ponte/v2/criar-arquivo',
+    express.json({ limit: '10mb' }),
     (req, res) => {
       try {
-        const { filename, code } = req.body ?? {};
+        const { filename, code } =
+          req.body ?? {};
 
         // --------------------------------------------------------
         // 🔤 CORREÇÃO UTF-8
@@ -2821,70 +2822,71 @@ else:
         // --------------------------------------------------------
 
         if (
-          typeof filenameCorrigido !== "string" ||
           !filenameCorrigido.trim()
         ) {
           return res.status(400).json({
             ok: false,
-            error: "Informe o nome do arquivo."
+            error:
+              'Informe o nome do arquivo.',
           });
         }
 
         if (
-          typeof codeCorrigido !== "string"
+          typeof codeCorrigido !==
+          'string'
         ) {
           return res.status(400).json({
             ok: false,
-            error: "Informe o código."
+            error:
+              'Informe o código.',
           });
         }
 
         // --------------------------------------------------------
-        // 🔐 Impede caminhos como ../../arquivo
+        // 🔐 NOME SEGURO
         // --------------------------------------------------------
 
         const safeFilename =
-          filenameCorrigido
-            .trim()
-            .replace(/\\/g, "/")
-            .split("/")
-            .pop() || "codigo.txt";
+          sanitizeSafePythonFilename(
+            filenameCorrigido.trim(),
+            'codigo'
+          );
 
         // --------------------------------------------------------
-        // 📄 UTF-8
+        // 📄 CABEÇALHOS UTF-8
         // --------------------------------------------------------
 
         res.setHeader(
-          "Content-Disposition",
+          'Content-Type',
+          'text/x-python; charset=utf-8'
+        );
+
+        res.setHeader(
+          'Content-Disposition',
           `attachment; filename="${safeFilename}"`
         );
 
-        res.setHeader(
-          "Content-Type",
-          "text/plain; charset=utf-8"
-        );
-
         // --------------------------------------------------------
-        // 💾 Envia o código corrigido em UTF-8
+        // 💾 ENVIO DO CÓDIGO EM UTF-8
         // --------------------------------------------------------
 
-        return res.send(
+        return res.end(
           Buffer.from(
             codeCorrigido,
-            "utf8"
+            'utf8'
           )
         );
 
       } catch (error) {
-
         console.error(
-          "Erro ao criar arquivo:",
+          'Erro ao criar arquivo:',
           error
         );
 
         return res.status(500).json({
           ok: false,
-          error: "Não foi possível criar o arquivo."
+          error:
+            'Não foi possível criar o arquivo.',
         });
       }
     }
