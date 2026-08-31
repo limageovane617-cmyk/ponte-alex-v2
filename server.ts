@@ -349,19 +349,35 @@ async function startServer() {
   function corrigirTextoUTF8(
     texto: unknown
   ): string {
+    // ----------------------------------------------------------
+    // GARANTIR STRING
+    // ----------------------------------------------------------
+
     if (
       typeof texto !== 'string'
     ) {
-      return String(texto ?? '');
+      return String(
+        texto ?? ''
+      );
     }
 
-    if (!texto) {
+    // ----------------------------------------------------------
+    // TEXTO NORMAL:
+    // NÃO ALTERAR
+    // ----------------------------------------------------------
+
+    if (
+      !texto
+    ) {
       return '';
     }
 
     // ----------------------------------------------------------
-    // Detecta sinais comuns de texto UTF-8 interpretado
-    // incorretamente como Latin-1/Windows-1252.
+    // DETECTAR SINAIS COMUNS DE MOJIBAKE
+    // Exemplo:
+    // "vocÃª"  -> "você"
+    // "estÃ¡"  -> "está"
+    // "ModificaÃ§Ã£o" -> "Modificação"
     // ----------------------------------------------------------
 
     const sinaisMojibake = [
@@ -377,28 +393,24 @@ async function startServer() {
       'ðŸ',
     ];
 
-    const quantidadeSinais =
-      sinaisMojibake.reduce(
-        (total, sinal) => {
-          return (
-            total +
-            texto.split(sinal).length -
-            1
-          );
-        },
-        0
+    const pareceMojibake =
+      sinaisMojibake.some(
+        (sinal) =>
+          texto.includes(
+            sinal
+          )
       );
 
-    // Se não houver sinais de corrupção,
-    // preserva exatamente o texto recebido.
+    // Se não houver sinais de texto corrompido,
+    // mantém exatamente o texto original.
     if (
-      quantidadeSinais === 0
+      !pareceMojibake
     ) {
       return texto;
     }
 
     // ----------------------------------------------------------
-    // Tenta recuperar o texto original.
+    // TENTAR RECUPERAR TEXTO UTF-8 INTERPRETADO COMO LATIN1
     // ----------------------------------------------------------
 
     try {
@@ -406,49 +418,30 @@ async function startServer() {
         Buffer.from(
           texto,
           'latin1'
-        ).toString('utf8');
+        ).toString(
+          'utf8'
+        );
 
       // --------------------------------------------------------
-      // Só aceita a correção se:
-      //
-      // 1. não gerar caractere inválido;
-      // 2. reduzir os sinais de mojibake;
-      // 3. não transformar o texto em algo vazio.
+      // SÓ ACEITAR A CORREÇÃO SE ELA NÃO GERAR
+      // CARACTERE DE SUBSTITUIÇÃO �
       // --------------------------------------------------------
 
       if (
-        corrigido &&
         !corrigido.includes(
           '\uFFFD'
         )
       ) {
-        const quantidadeDepois =
-          sinaisMojibake.reduce(
-            (
-              total,
-              sinal
-            ) => {
-              return (
-                total +
-                corrigido
-                  .split(sinal)
-                  .length -
-                1
-              );
-            },
-            0
-          );
-
-        if (
-          quantidadeDepois <
-          quantidadeSinais
-        ) {
-          return corrigido;
-        }
+        return corrigido;
       }
     } catch {
-      // Mantém o texto original se a conversão falhar.
+      // Se falhar, mantém o texto original.
     }
+
+    // ----------------------------------------------------------
+    // NÃO CONSEGUIU CORRIGIR:
+    // PRESERVAR O TEXTO ORIGINAL
+    // ----------------------------------------------------------
 
     return texto;
   }
