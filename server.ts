@@ -2779,13 +2779,20 @@ else:
           });
         }
 
-        // Impede caminhos como ../../arquivo
+        // --------------------------------------------------------
+        // 🔐 Impede caminhos como ../../arquivo
+        // --------------------------------------------------------
+
         const safeFilename =
           filename
             .trim()
             .replace(/\\/g, "/")
             .split("/")
             .pop() || "codigo.txt";
+
+        // --------------------------------------------------------
+        // 📄 UTF-8
+        // --------------------------------------------------------
 
         res.setHeader(
           "Content-Disposition",
@@ -2794,12 +2801,16 @@ else:
 
         res.setHeader(
           "Content-Type",
-          "application/octet-stream"
+          "text/plain; charset=utf-8"
         );
 
-        return res.send(code);
+        // Envia explicitamente os bytes em UTF-8
+        return res.send(
+          Buffer.from(code, "utf8")
+        );
 
       } catch (error) {
+
         console.error(
           "Erro ao criar arquivo:",
           error
@@ -2813,6 +2824,10 @@ else:
     }
   );
 
+  // ============================================================
+  // START SERVER
+  // ============================================================
+ 
   // ============================================================
   // START SERVER
   // ============================================================
