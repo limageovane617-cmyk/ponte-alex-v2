@@ -165,6 +165,7 @@ async function startServer() {
 
   function getFileStats(filename: string) {
     const safeFilename = path.basename(filename);
+
     const filePath = path.join(
       process.cwd(),
       safeFilename
@@ -179,12 +180,14 @@ async function startServer() {
     }
 
     const stats = fs.statSync(filePath);
+
     const content = fs.readFileSync(
       filePath,
       'utf8'
     );
 
     const hash = calculateSha256(content);
+
     const lines = content.split('\n').length;
 
     return {
@@ -210,19 +213,30 @@ async function startServer() {
 
     const base = path
       .basename(input)
-      .replace(/[^a-zA-Z0-9._-]/g, '_');
+      .replace(
+        /[^a-zA-Z0-9._-]/g,
+        '_'
+      );
 
-    let clean = base.replace(/^\.+/, '');
+    let clean = base.replace(
+      /^\.+/,
+      ''
+    );
 
     if (
       !clean ||
       clean === '.py' ||
       clean === '_'
     ) {
-      clean = `${fallbackPrefix}_${Date.now()}.py`;
+      clean =
+        `${fallbackPrefix}_${Date.now()}.py`;
     }
 
-    if (!clean.toLowerCase().endsWith('.py')) {
+    if (
+      !clean
+        .toLowerCase()
+        .endsWith('.py')
+    ) {
       clean += '.py';
     }
 
@@ -263,7 +277,8 @@ async function startServer() {
       return authHeader.trim();
     }
 
-    const querySecret = req.query.secret;
+    const querySecret =
+      req.query.secret;
 
     if (
       querySecret &&
@@ -273,7 +288,8 @@ async function startServer() {
       return querySecret.trim();
     }
 
-    const bodySecret = req.body?.secret;
+    const bodySecret =
+      req.body?.secret;
 
     if (
       bodySecret &&
@@ -287,23 +303,27 @@ async function startServer() {
   }
 
   function getSystemConfiguredSecret(): string {
-  return (
-    process.env.PONTE_API_SECRET ||
-    process.env.PONTE_API_SECRETO ||
-    process.env.ALEX_BRIDGE_SECRET ||
-    ''
-  ).trim();
- }
+    return (
+      process.env.PONTE_API_SECRET ||
+      process.env.PONTE_API_SECRETO ||
+      process.env.ALEX_BRIDGE_SECRET ||
+      ''
+    ).trim();
+  }
+
   function isInsideDirectory(
     filePath: string,
     directory: string
   ): boolean {
-    const resolvedFile = path.resolve(filePath);
-    const resolvedDir =
-      path.resolve(directory) + path.sep;
+    const resolvedFile =
+      path.resolve(filePath);
 
-    return (
-      resolvedFile.startsWith(resolvedDir)
+    const resolvedDir =
+      path.resolve(directory) +
+      path.sep;
+
+    return resolvedFile.startsWith(
+      resolvedDir
     );
   }
 
@@ -316,115 +336,207 @@ async function startServer() {
   function getShellSafePath(
     filePath: string
   ): string {
-    return `"${filePath.replace(/"/g, '\\"')}"`;
+    return `"${filePath.replace(
+      /"/g,
+      '\\"'
+    )}"`;
+  }
+
+  // ============================================================
+  // UTF-8
+  // ============================================================
+
+  function corrigirTextoUTF8(
+    texto: unknown
+  ): string {
+    if (
+      typeof texto !== 'string'
+    ) {
+      return String(texto ?? '');
+    }
+
+    const sinaisMojibake = [
+      'Ã',
+      'Â',
+      'â€',
+      'â€™',
+      'â€œ',
+      'â€',
+      'â€“',
+      'â€”',
+      'â€¦',
+    ];
+
+    const pareceMojibake =
+      sinaisMojibake.some(
+        (sinal) =>
+          texto.includes(sinal)
+      );
+
+    if (!pareceMojibake) {
+      return texto;
+    }
+
+    try {
+      const corrigido =
+        Buffer.from(
+          texto,
+          'latin1'
+        ).toString('utf8');
+
+      if (
+        !corrigido.includes(
+          '\uFFFD'
+        )
+      ) {
+        return corrigido;
+      }
+    } catch {
+      // Mantém original.
+    }
+
+    return texto;
   }
 
   // ============================================================
   // STATUS
   // ============================================================
 
-  app.get('/api/status', (req, res) => {
-    const original =
-      getFileStats('app_teste.py');
+  app.get(
+    '/api/status',
+    (req, res) => {
+      const original =
+        getFileStats(
+          'app_teste.py'
+        );
 
-    const copia =
-      getFileStats('app_teste_copia.py');
+      const copia =
+        getFileStats(
+          'app_teste_copia.py'
+        );
 
-    const testeAlex =
-      getFileStats('teste_alex.py');
+      const testeAlex =
+        getFileStats(
+          'teste_alex.py'
+        );
 
-    const areIdentical =
-      original.exists &&
-      copia.exists &&
-      original.sha256 === copia.sha256;
+      const areIdentical =
+        original.exists &&
+        copia.exists &&
+        original.sha256 ===
+          copia.sha256;
 
-    return res.json({
-      success: true,
-      files: {
-        original,
-        copia,
-        testeAlex,
-      },
-      areIdentical,
-    });
-  });
+      return res.json({
+        success: true,
+
+        files: {
+          original,
+          copia,
+          testeAlex,
+        },
+
+        areIdentical,
+      });
+    }
+  );
 
   // ============================================================
   // CRIAR CÓPIA
   // ============================================================
 
-  app.post('/api/create-copy', (req, res) => {
-    try {
-      const srcPath = path.join(
-        process.cwd(),
-        'app_teste.py'
-      );
+  app.post(
+    '/api/create-copy',
+    (req, res) => {
+      try {
+        const srcPath =
+          path.join(
+            process.cwd(),
+            'app_teste.py'
+          );
 
-      const dstPath = path.join(
-        process.cwd(),
-        'app_teste_copia.py'
-      );
+        const dstPath =
+          path.join(
+            process.cwd(),
+            'app_teste_copia.py'
+          );
 
-      if (!fs.existsSync(srcPath)) {
-        return res.status(404).json({
-          success: false,
-          error:
-            'app_teste.py não encontrado na raiz.',
-        });
-      }
+        if (
+          !fs.existsSync(srcPath)
+        ) {
+          return res.status(404).json({
+            success: false,
+            error:
+              'app_teste.py não encontrado na raiz.',
+          });
+        }
 
-      fs.copyFileSync(
-        srcPath,
-        dstPath
-      );
-
-      const copiaStats =
-        getFileStats(
-          'app_teste_copia.py'
+        fs.copyFileSync(
+          srcPath,
+          dstPath
         );
 
-      const origStats =
-        getFileStats('app_teste.py');
+        const copiaStats =
+          getFileStats(
+            'app_teste_copia.py'
+          );
 
-      return res.json({
-        success: true,
-        message:
-          'Cópia física app_teste_copia.py criada com sucesso.',
-        copia: copiaStats,
-        isIdentical:
-          copiaStats.sha256 ===
-          origStats.sha256,
-      });
-    } catch (e: any) {
-      return res.status(500).json({
-        success: false,
-        error: e.message,
-      });
+        const origStats =
+          getFileStats(
+            'app_teste.py'
+          );
+
+        return res.json({
+          success: true,
+
+          message:
+            'Cópia física app_teste_copia.py criada com sucesso.',
+
+          copia:
+            copiaStats,
+
+          isIdentical:
+            copiaStats.sha256 ===
+            origStats.sha256,
+        });
+      } catch (e: any) {
+        return res.status(500).json({
+          success: false,
+          error: e.message,
+        });
+      }
     }
-  });
+  );
 
   // ============================================================
   // TESTAR CÓPIA
   // ============================================================
 
-  app.post('/api/run-copia', (req, res) => {
-    const filePath = path.join(
-      process.cwd(),
-      'app_teste_copia.py'
-    );
+  app.post(
+    '/api/run-copia',
+    (req, res) => {
+      const filePath =
+        path.join(
+          process.cwd(),
+          'app_teste_copia.py'
+        );
 
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({
-        success: false,
-        error:
-          'app_teste_copia.py não encontrado no disco.',
-      });
-    }
+      if (
+        !fs.existsSync(filePath)
+      ) {
+        return res.status(404).json({
+          success: false,
+          error:
+            'app_teste_copia.py não encontrado no disco.',
+        });
+      }
 
-    const startTime = Date.now();
-    const python = getPythonCommand();
+      const startTime =
+        Date.now();
 
-    const script = `
+      const python =
+        getPythonCommand();
+
+      const script = `
 import sys
 import time
 import urllib.request
@@ -529,150 +641,220 @@ else:
     )
 `;
 
-    const encoded =
-      Buffer.from(script, 'utf8').toString(
-        'base64'
+      const encoded =
+        Buffer.from(
+          script,
+          'utf8'
+        ).toString(
+          'base64'
+        );
+
+      const command =
+        `${python} -c "import base64; exec(base64.b64decode('${encoded}'))"`;
+
+      exec(
+        command,
+        {
+          timeout: 15000,
+          maxBuffer:
+            10 * 1024 * 1024,
+        },
+        (
+          error,
+          stdout,
+          stderr
+        ) => {
+          const durationMs =
+            Date.now() -
+            startTime;
+
+          return res.json({
+            success:
+              !error,
+
+            exitCode:
+              error
+                ? typeof error.code ===
+                  'number'
+                  ? error.code
+                  : 1
+                : 0,
+
+            stdout:
+              stdout || '',
+
+            stderr:
+              stderr || '',
+
+            durationMs,
+
+            executedCommand:
+              `${python} app_teste_copia.py ` +
+              '(verificação de runtime e servidor)',
+          });
+        }
       );
-
-    const command =
-      `${python} -c "import base64; exec(base64.b64decode('${encoded}'))"`;
-
-    exec(
-      command,
-      {
-        timeout: 15000,
-        maxBuffer: 10 * 1024 * 1024,
-      },
-      (error, stdout, stderr) => {
-        const durationMs =
-          Date.now() - startTime;
-
-        return res.json({
-          success: !error,
-          exitCode: error
-            ? typeof error.code === 'number'
-              ? error.code
-              : 1
-            : 0,
-          stdout: stdout || '',
-          stderr: stderr || '',
-          durationMs,
-          executedCommand:
-            `${python} app_teste_copia.py ` +
-            '(verificação de runtime e servidor)',
-        });
-      }
-    );
-  });
+    }
+  );
 
   // ============================================================
   // LEGACY - CHECK FILE
   // ============================================================
 
-  app.get('/api/check-file', (req, res) => {
-    return res.json(
-      getFileStats('teste_alex.py')
-    );
-  });
+  app.get(
+    '/api/check-file',
+    (req, res) => {
+      return res.json(
+        getFileStats(
+          'teste_alex.py'
+        )
+      );
+    }
+  );
 
   // ============================================================
   // LEGACY - CREATE FILE
   // ============================================================
 
-  app.post('/api/create-file', (req, res) => {
-    try {
+  app.post(
+    '/api/create-file',
+    (req, res) => {
+      try {
+        const targetFilePath =
+          path.join(
+            process.cwd(),
+            'teste_alex.py'
+          );
+
+        const content =
+          req.body?.content !==
+          undefined
+            ? String(
+                req.body.content
+              )
+            : 'print("Olá, arquivo Alex!")\n';
+
+        fs.writeFileSync(
+          targetFilePath,
+          content,
+          'utf8'
+        );
+
+        const stats =
+          fs.statSync(
+            targetFilePath
+          );
+
+        return res.json({
+          success: true,
+
+          message:
+            'Arquivo criado com sucesso no disco.',
+
+          filename:
+            'teste_alex.py',
+
+          filePath:
+            targetFilePath,
+
+          size:
+            stats.size,
+
+          modifiedAt:
+            stats.mtime.toISOString(),
+
+          content:
+            fs.readFileSync(
+              targetFilePath,
+              'utf8'
+            ),
+        });
+      } catch (error: any) {
+        return res.status(500).json({
+          success: false,
+          error:
+            error.message,
+        });
+      }
+    }
+  );
+
+  // ============================================================
+  // LEGACY - RUN PYTHON
+  // ============================================================
+
+  app.post(
+    '/api/run-python',
+    (req, res) => {
       const targetFilePath =
         path.join(
           process.cwd(),
           'teste_alex.py'
         );
 
-      const content =
-        req.body?.content !== undefined
-          ? String(req.body.content)
-          : 'print("Olá, arquivo Alex!")\n';
-
-      fs.writeFileSync(
-        targetFilePath,
-        content,
-        'utf8'
-      );
-
-      const stats =
-        fs.statSync(targetFilePath);
-
-      return res.json({
-        success: true,
-        message:
-          'Arquivo criado com sucesso no disco.',
-        filename: 'teste_alex.py',
-        filePath: targetFilePath,
-        size: stats.size,
-        modifiedAt:
-          stats.mtime.toISOString(),
-        content: fs.readFileSync(
-          targetFilePath,
-          'utf8'
-        ),
-      });
-    } catch (error: any) {
-      return res.status(500).json({
-        success: false,
-        error: error.message,
-      });
-    }
-  });
-
-  // ============================================================
-  // LEGACY - RUN PYTHON
-  // ============================================================
-
-  app.post('/api/run-python', (req, res) => {
-    const targetFilePath =
-      path.join(
-        process.cwd(),
-        'teste_alex.py'
-      );
-
-    if (!fs.existsSync(targetFilePath)) {
-      return res.status(404).json({
-        success: false,
-        error:
-          'teste_alex.py não encontrado.',
-      });
-    }
-
-    const startTime = Date.now();
-    const python = getPythonCommand();
-
-    exec(
-      `${python} ${getShellSafePath(
-        targetFilePath
-      )}`,
-      {
-        timeout: 10000,
-        maxBuffer: 10 * 1024 * 1024,
-      },
-      (error, stdout, stderr) => {
-        const durationMs =
-          Date.now() - startTime;
-
-        return res.json({
-          success: !error,
-          exitCode: error
-            ? typeof error.code === 'number'
-              ? error.code
-              : 1
-            : 0,
-          stdout: stdout || '',
-          stderr: stderr || '',
-          durationMs,
-          executedCommand:
-            `${python} teste_alex.py`,
+      if (
+        !fs.existsSync(
+          targetFilePath
+        )
+      ) {
+        return res.status(404).json({
+          success: false,
+          error:
+            'teste_alex.py não encontrado.',
         });
       }
-    );
-  });
+
+      const startTime =
+        Date.now();
+
+      const python =
+        getPythonCommand();
+
+      exec(
+        `${python} ${getShellSafePath(
+          targetFilePath
+        )}`,
+        {
+          timeout: 10000,
+          maxBuffer:
+            10 * 1024 * 1024,
+        },
+        (
+          error,
+          stdout,
+          stderr
+        ) => {
+          const durationMs =
+            Date.now() -
+            startTime;
+
+          return res.json({
+            success:
+              !error,
+
+            exitCode:
+              error
+                ? typeof error.code ===
+                  'number'
+                  ? error.code
+                  : 1
+                : 0,
+
+            stdout:
+              stdout || '',
+
+            stderr:
+              stderr || '',
+
+            durationMs,
+
+            executedCommand:
+              `${python} teste_alex.py`,
+          });
+        }
+      );
+    }
+  );
 
   // ============================================================
   // TRANSFORMAÇÃO LOCAL
@@ -687,23 +869,32 @@ else:
     newContent: string;
     summary: string;
   } {
-    let modified = originalContent;
+    let modified =
+      originalContent;
 
-    const summaryParts: string[] = [];
-
-    // ----------------------------------------------------------
-    // 1. SUBSTITUIÇÃO EXATA
-    // ----------------------------------------------------------
+    const summaryParts: string[] =
+      [];
 
     if (
-      searchTarget !== undefined &&
+      searchTarget !==
+        undefined &&
       searchTarget.length > 0 &&
-      replaceWith !== undefined
+      replaceWith !==
+        undefined
     ) {
-      if (modified.includes(searchTarget)) {
-        modified = modified
-          .split(searchTarget)
-          .join(replaceWith);
+      if (
+        modified.includes(
+          searchTarget
+        )
+      ) {
+        modified =
+          modified
+            .split(
+              searchTarget
+            )
+            .join(
+              replaceWith
+            );
 
         summaryParts.push(
           `Substituição exata de '${searchTarget}' por '${replaceWith}'`
@@ -716,20 +907,17 @@ else:
     }
 
     const instrLower =
-      instruction.toLowerCase().trim();
+      instruction
+        .toLowerCase()
+        .trim();
 
-    // Evita warning de TypeScript quando
-    // a variável é usada apenas como normalização.
     void instrLower;
-
-    // ----------------------------------------------------------
-    // 2. SUBSTITUIR "X" POR "Y"
-    // ----------------------------------------------------------
 
     const replacePattern =
       /(?:substituir|trocar|mudar|alterar|replace)\s+["'`]([^"'`]+)["'`]\s+(?:por|para|with)\s+["'`]([^"'`]+)["'`]/gi;
 
-    let match: RegExpExecArray | null;
+    let match:
+      RegExpExecArray | null;
 
     let replacedCount = 0;
 
@@ -739,13 +927,21 @@ else:
           instruction
         )) !== null
     ) {
-      const fromText = match[1];
-      const toText = match[2];
+      const fromText =
+        match[1];
 
-      if (modified.includes(fromText)) {
-        modified = modified
-          .split(fromText)
-          .join(toText);
+      const toText =
+        match[2];
+
+      if (
+        modified.includes(
+          fromText
+        )
+      ) {
+        modified =
+          modified
+            .split(fromText)
+            .join(toText);
 
         summaryParts.push(
           `Substituído "${fromText}" por "${toText}"`
@@ -758,10 +954,6 @@ else:
         );
       }
     }
-
-    // ----------------------------------------------------------
-    // 3. ALTERAR VALOR DE VARIÁVEL
-    // ----------------------------------------------------------
 
     const variableValuePattern =
       /(?:alterar|mudar|trocar|substituir)\s+(?:somente\s+)?(?:o\s+)?valor\s+da\s+vari[áa]vel\s+([a-zA-Z_][a-zA-Z0-9_]*)\s+de\s+(-?\d+(?:\.\d+)?)\s+para\s+(-?\d+(?:\.\d+)?)/i;
@@ -797,7 +989,8 @@ else:
             '(\\s*(?:#.*)?)$'
         );
 
-      let variableChanged = false;
+      let variableChanged =
+        false;
 
       for (
         let i = 0;
@@ -817,12 +1010,16 @@ else:
                 '$2'
             );
 
-          variableChanged = true;
+          variableChanged =
+            true;
+
           break;
         }
       }
 
-      if (variableChanged) {
+      if (
+        variableChanged
+      ) {
         modified =
           lines.join('\n');
 
@@ -837,10 +1034,6 @@ else:
         );
       }
     }
-
-    // ----------------------------------------------------------
-    // 4. ADICIONAR FUNÇÃO
-    // ----------------------------------------------------------
 
     const funcPattern =
       /(?:adicionar|criar)\s+fun[çc][ãa]o\s+([a-zA-Z0-9_]+)\s*[:(]?([\s\S]*)/i;
@@ -859,7 +1052,8 @@ else:
         funcMatch[1];
 
       const funcDetails =
-        funcMatch[2]?.trim() || '';
+        funcMatch[2]?.trim() ||
+        '';
 
       const safeDescription =
         funcDetails.replace(
@@ -874,7 +1068,8 @@ else:
         `    print("[Ponte Alex] Função ${funcName} executada.")\n` +
         `    return None\n`;
 
-      modified += newFunctionCode;
+      modified +=
+        newFunctionCode;
 
       summaryParts.push(
         `Adicionada nova função 'def ${funcName}'`
@@ -882,10 +1077,6 @@ else:
 
       replacedCount++;
     }
-
-    // ----------------------------------------------------------
-    // 5. ADICIONAR PRINT
-    // ----------------------------------------------------------
 
     const printPattern =
       /(?:adicionar|inserir|colocar)\s+(?:print|mensagem|log)[:\s]+["'`]([^"'`]+)["'`]/i;
@@ -902,13 +1093,17 @@ else:
     ) {
       const msg =
         printMatch[1]
-          .replace(/\\/g, '\\\\')
-          .replace(/"/g, '\\"');
+          .replace(
+            /\\/g,
+            '\\\\'
+          )
+          .replace(
+            /"/g,
+            '\\"'
+          );
 
-      const printCode =
+      modified +=
         `\nprint("${msg}")\n`;
-
-      modified += printCode;
 
       summaryParts.push(
         `Adicionado comando print("${msg}")`
@@ -916,10 +1111,6 @@ else:
 
       replacedCount++;
     }
-
-    // ----------------------------------------------------------
-    // 6. ADICIONAR NO INÍCIO
-    // ----------------------------------------------------------
 
     const prependPattern =
       /(?:adicionar|inserir|prepend)\s+no\s+in[ií]cio[:\s]+([\s\S]+)/i;
@@ -929,13 +1120,16 @@ else:
         prependPattern
       );
 
-    if (prependMatch) {
+    if (
+      prependMatch
+    ) {
       const prepCode =
         prependMatch[1].trim() +
         '\n';
 
       modified =
-        prepCode + modified;
+        prepCode +
+        modified;
 
       summaryParts.push(
         'Adicionado código no início do arquivo'
@@ -943,10 +1137,6 @@ else:
 
       replacedCount++;
     }
-
-    // ----------------------------------------------------------
-    // 7. ADICIONAR NO FINAL
-    // ----------------------------------------------------------
 
     const appendPattern =
       /(?:adicionar|inserir|append)\s+(?:no\s+final|ao\s+fim)[:\s]+([\s\S]+)/i;
@@ -956,13 +1146,16 @@ else:
         appendPattern
       );
 
-    if (appendMatch) {
+    if (
+      appendMatch
+    ) {
       const appCode =
         '\n' +
         appendMatch[1].trim() +
         '\n';
 
-      modified += appCode;
+      modified +=
+        appCode;
 
       summaryParts.push(
         'Adicionado código ao final do arquivo'
@@ -970,26 +1163,23 @@ else:
 
       replacedCount++;
     }
-    // ----------------------------------------------------------
-    // 8. NADA RECONHECIDO
-    // ----------------------------------------------------------
 
-    if (summaryParts.length === 0) {
-      const timestamp =
-        new Date().toLocaleString('pt-BR');
-
+    if (
+      summaryParts.length ===
+      0
+    ) {
       const escapedInstruction =
         instruction
-          .replace(/\\/g, '\\\\')
-          .replace(/"/g, '\\"');
+          .replace(
+            /\\/g,
+            '\\\\'
+          )
+          .replace(
+            /"/g,
+            '\\"'
+          );
 
-      // Não adiciona mais banner ou comentário
-      // com a instrução recebida.
-      // A instrução deve ser tratada apenas
-      // como comando de transformação.
-
-      modified =
-        modified +
+      modified +=
         `\nprint("[Ponte Alex v2] Modificação executada: ${escapedInstruction}")\n`;
 
       summaryParts.push(
@@ -998,13 +1188,18 @@ else:
     }
 
     return {
-      newContent: modified,
+      newContent:
+        modified,
+
       summary:
-        summaryParts.join('; '),
+        summaryParts.join(
+          '; '
+        ),
     };
   }
+
   // ============================================================
-  // PONTE ALEX v1
+  // PONTE ALEX V1
   // ============================================================
 
   app.post(
@@ -1012,16 +1207,22 @@ else:
     (req, res) => {
       try {
         const {
-          filename = 'script_alex.py',
+          filename =
+            'script_alex.py',
+
           fileContent,
+
           instruction,
+
           searchTarget,
+
           replaceWith,
         } = req.body || {};
 
         if (
           !fileContent ||
-          typeof fileContent !== 'string'
+          typeof fileContent !==
+            'string'
         ) {
           return res.status(400).json({
             success: false,
@@ -1032,7 +1233,8 @@ else:
 
         if (
           !instruction ||
-          typeof instruction !== 'string'
+          typeof instruction !==
+            'string'
         ) {
           return res.status(400).json({
             success: false,
@@ -1041,7 +1243,8 @@ else:
           });
         }
 
-        const timestamp = Date.now();
+        const timestamp =
+          Date.now();
 
         const cleanBaseName =
           path
@@ -1088,7 +1291,8 @@ else:
 
         const {
           newContent,
-          summary: transformSummary,
+          summary:
+            transformSummary,
         } =
           applyLocalTransformation(
             fileContent,
@@ -1142,71 +1346,102 @@ else:
             compileStdout,
             compileStderr
           ) => {
-            if (compileErr) {
-              const durationMs =
-                Date.now() -
-                startExecTime;
-
+            if (
+              compileErr
+            ) {
               return res.json({
-                success: false,
-                testPassed: false,
+                success:
+                  false,
+
+                testPassed:
+                  false,
+
                 testMessage:
                   '❌ Falha de sintaxe / compilação Python detectada.',
+
                 compileCheck: {
-                  passed: false,
+                  passed:
+                    false,
+
                   error:
                     (
                       compileStderr ||
                       compileErr.message
                     ).trim(),
                 },
+
                 execution: {
                   exitCode:
                     typeof compileErr.code ===
                     'number'
                       ? compileErr.code
                       : 1,
+
                   stdout:
-                    compileStdout || '',
+                    compileStdout ||
+                    '',
+
                   stderr:
                     compileStderr ||
                     compileErr.message,
-                  durationMs,
+
+                  durationMs:
+                    Date.now() -
+                    startExecTime,
                 },
+
                 originalFile: {
                   filename:
                     originalSaveFilename,
+
                   size:
                     origStats.size,
+
                   lines:
                     fileContent.split(
                       '\n'
                     ).length,
+
                   sha256:
                     origHash,
+
                   savedPath:
-                    originalSavePath,
-                  untouched: true,
+                    `storage/originals/${originalSaveFilename}`,
+
+                  untouched:
+                    true,
                 },
+
                 processedFile: {
                   filename:
                     processedFilename,
+
                   size:
                     procStats.size,
+
                   lines:
                     newContent.split(
                       '\n'
                     ).length,
+
                   sha256:
                     procHash,
+
                   content:
                     newContent,
+
                   downloadUrl:
-                    `/api/download/processed/${processedFilename}`,
+                    `/api/download/processed/${encodeURIComponent(
+                      processedFilename
+                    )}`,
                 },
+
                 instruction,
+
                 transformSummary,
-                neverOverwritten: true,
+
+                neverOverwritten:
+                  true,
               });
             }
 
@@ -1215,7 +1450,9 @@ else:
                 processedFilePath
               )}`,
               {
-                timeout: 10000,
+                timeout:
+                  10000,
+
                 maxBuffer:
                   10 * 1024 * 1024,
               },
@@ -1228,21 +1465,26 @@ else:
                   Date.now() -
                   startExecTime;
 
-                const testPassed =
-                  !execErr;
-
                 return res.json({
-                  success: true,
-                  testPassed,
+                  success:
+                    true,
+
+                  testPassed:
+                    !execErr,
+
                   testMessage:
-                    testPassed
+                    !execErr
                       ? '✅ Teste de execução Python concluído com sucesso (Exit Code 0).'
                       : '⚠️ Erro durante a execução em runtime do novo arquivo.',
+
                   compileCheck: {
-                    passed: true,
+                    passed:
+                      true,
+
                     message:
                       'Sintaxe Python OK',
                   },
+
                   execution: {
                     exitCode:
                       execErr
@@ -1251,46 +1493,70 @@ else:
                           ? execErr.code
                           : 1
                         : 0,
+
                     stdout:
-                      execStdout || '',
+                      execStdout ||
+                      '',
+
                     stderr:
-                      execStderr || '',
+                      execStderr ||
+                      '',
+
                     durationMs,
                   },
+
                   originalFile: {
                     filename:
                       originalSaveFilename,
+
                     size:
                       origStats.size,
+
                     lines:
                       fileContent.split(
                         '\n'
                       ).length,
+
                     sha256:
                       origHash,
+
                     savedPath:
-                      originalSavePath,
-                    untouched: true,
+                      `storage/originals/${originalSaveFilename}`,
+
+                    untouched:
+                      true,
                   },
+
                   processedFile: {
                     filename:
                       processedFilename,
+
                     size:
                       procStats.size,
+
                     lines:
                       newContent.split(
                         '\n'
                       ).length,
+
                     sha256:
                       procHash,
+
                     content:
                       newContent,
+
                     downloadUrl:
-                      `/api/download/processed/${processedFilename}`,
+                      `/api/download/processed/${encodeURIComponent(
+                        processedFilename
+                      )}`,
                   },
+
                   instruction,
+
                   transformSummary,
-                  neverOverwritten: true,
+
+                  neverOverwritten:
+                    true,
                 });
               }
             );
@@ -1337,29 +1603,35 @@ else:
 
         const items =
           files
-            .map((filename) => {
-              const filePath =
-                path.join(
-                  processedDir,
-                  filename
-                );
-
-              const stats =
-                fs.statSync(
-                  filePath
-                );
-
-              return {
-                filename,
-                size: stats.size,
-                modifiedAt:
-                  stats.mtime.toISOString(),
-                downloadUrl:
-                  `/api/download/processed/${encodeURIComponent(
+            .map(
+              (filename) => {
+                const filePath =
+                  path.join(
+                    processedDir,
                     filename
-                  )}`,
-              };
-            })
+                  );
+
+                const stats =
+                  fs.statSync(
+                    filePath
+                  );
+
+                return {
+                  filename,
+
+                  size:
+                    stats.size,
+
+                  modifiedAt:
+                    stats.mtime.toISOString(),
+
+                  downloadUrl:
+                    `/api/download/processed/${encodeURIComponent(
+                      filename
+                    )}`,
+                };
+              }
+            )
             .sort(
               (a, b) =>
                 new Date(
@@ -1371,13 +1643,18 @@ else:
             );
 
         return res.json({
-          success: true,
+          success:
+            true,
+
           items,
         });
       } catch (e: any) {
         return res.status(500).json({
-          success: false,
-          error: e.message,
+          success:
+            false,
+
+          error:
+            e.message,
         });
       }
     }
@@ -1390,29 +1667,37 @@ else:
   app.post(
     '/api/ponte/run-test',
     (req, res) => {
-      const { filename } =
-        req.body || {};
+      const {
+        filename,
+      } = req.body || {};
 
       if (
         !filename ||
-        typeof filename !== 'string'
+        typeof filename !==
+          'string'
       ) {
         return res.status(400).json({
-          success: false,
+          success:
+            false,
+
           error:
             'Nome do arquivo não informado.',
         });
       }
 
       const safeName =
-        path.basename(filename);
+        path.basename(
+          filename
+        );
 
       if (
         safeName !== filename &&
         filename.includes('/')
       ) {
         return res.status(400).json({
-          success: false,
+          success:
+            false,
+
           error:
             'Nome de arquivo inválido.',
         });
@@ -1431,17 +1716,23 @@ else:
         )
       ) {
         return res.status(403).json({
-          success: false,
+          success:
+            false,
+
           error:
             'Acesso ao arquivo negado.',
         });
       }
 
       if (
-        !fs.existsSync(filePath)
+        !fs.existsSync(
+          filePath
+        )
       ) {
         return res.status(404).json({
-          success: false,
+          success:
+            false,
+
           error:
             'Arquivo processado não encontrado.',
         });
@@ -1458,7 +1749,9 @@ else:
           filePath
         )}`,
         {
-          timeout: 10000,
+          timeout:
+            10000,
+
           maxBuffer:
             10 * 1024 * 1024,
         },
@@ -1467,23 +1760,28 @@ else:
           stdout,
           stderr
         ) => {
-          const durationMs =
-            Date.now() -
-            startTime;
-
           return res.json({
-            success: !err,
-            exitCode: err
-              ? typeof err.code ===
-                'number'
-                ? err.code
-                : 1
-              : 0,
+            success:
+              !err,
+
+            exitCode:
+              err
+                ? typeof err.code ===
+                  'number'
+                  ? err.code
+                  : 1
+                : 0,
+
             stdout:
               stdout || '',
+
             stderr:
               stderr || '',
-            durationMs,
+
+            durationMs:
+              Date.now() -
+              startTime,
+
             executedCommand:
               `${python} ${safeName}`,
           });
@@ -1522,7 +1820,9 @@ else:
       }
 
       if (
-        !fs.existsSync(filePath)
+        !fs.existsSync(
+          filePath
+        )
       ) {
         return res.status(404).send(
           'Arquivo processado não encontrado.'
@@ -1566,7 +1866,9 @@ else:
       }
 
       if (
-        !fs.existsSync(filePath)
+        !fs.existsSync(
+          filePath
+        )
       ) {
         return res.status(404).send(
           'Arquivo original não encontrado.'
@@ -1598,7 +1900,9 @@ else:
         );
 
       if (
-        !fs.existsSync(yamlPath)
+        !fs.existsSync(
+          yamlPath
+        )
       ) {
         return res.status(404).send(
           'Arquivo OpenAPI v2 não encontrado.'
@@ -1639,7 +1943,9 @@ else:
         );
 
       if (
-        !fs.existsSync(yamlPath)
+        !fs.existsSync(
+          yamlPath
+        )
       ) {
         return res.status(404).send(
           'Arquivo OpenAPI não encontrado.'
@@ -1679,7 +1985,9 @@ else:
         );
 
       if (
-        !fs.existsSync(filePath)
+        !fs.existsSync(
+          filePath
+        )
       ) {
         return res.status(404).send(
           'Arquivo cliente_ponte_alex.py não encontrado.'
@@ -1719,7 +2027,9 @@ else:
         );
 
       if (
-        !fs.existsSync(filePath)
+        !fs.existsSync(
+          filePath
+        )
       ) {
         return res.status(404).send(
           'Arquivo teste_cliente_ponte.py não encontrado.'
@@ -1762,7 +2072,8 @@ else:
         exec(
           `${python} --version`,
           {
-            timeout: 5000,
+            timeout:
+              5000,
           },
           (
             err,
@@ -1835,6 +2146,9 @@ else:
                 processar:
                   'POST /api/ponte/v2/processar',
 
+                criarArquivo:
+                  'POST /api/ponte/v2/criar-arquivo',
+
                 history:
                   'GET /api/ponte/history',
 
@@ -1852,8 +2166,11 @@ else:
         );
       } catch (e: any) {
         return res.status(500).json({
-          status: 'error',
-          error: e.message,
+          status:
+            'error',
+
+          error:
+            e.message,
         });
       }
     }
@@ -1884,7 +2201,8 @@ else:
           );
 
         return res.json({
-          success: true,
+          success:
+            true,
 
           ponte:
             'Ponte Alex v2',
@@ -1959,12 +2277,15 @@ else:
 
                 uptimeFormatted:
                   `${Math.floor(
-                    process.uptime() / 3600
+                    process.uptime() /
+                      3600
                   )}h ${Math.floor(
-                    (process.uptime() % 3600) /
+                    (process.uptime() %
+                      3600) /
                       60
                   )}m ${Math.floor(
-                    process.uptime() % 60
+                    process.uptime() %
+                      60
                   )}s`,
               },
             },
@@ -2039,7 +2360,9 @@ else:
         });
       } catch (e: any) {
         return res.status(500).json({
-          success: false,
+          success:
+            false,
+
           error:
             `Erro ao obter diagnóstico de recursos: ${e.message}`,
         });
@@ -2055,18 +2378,17 @@ else:
     '/api/ponte/v2/processar',
     (req, res) => {
       try {
-        // ------------------------------------------------------
-        // AUTENTICAÇÃO
-        // ------------------------------------------------------
-
         const configuredSecret =
           getSystemConfiguredSecret();
 
         const providedSecret =
-          extractProvidedSecret(req);
+          extractProvidedSecret(
+            req
+          );
 
         if (
-          configuredSecret.length > 0
+          configuredSecret.length >
+          0
         ) {
           if (
             !providedSecret ||
@@ -2074,7 +2396,8 @@ else:
               configuredSecret
           ) {
             return res.status(401).json({
-              success: false,
+              success:
+                false,
 
               ponteVersion:
                 'v2',
@@ -2096,10 +2419,6 @@ else:
             });
           }
         }
-
-        // ------------------------------------------------------
-        // BODY
-        // ------------------------------------------------------
 
         const body =
           req.body || {};
@@ -2127,10 +2446,6 @@ else:
           body.output ??
           undefined;
 
-        // ------------------------------------------------------
-        // 🔤 CORREÇÃO UTF-8
-        // ------------------------------------------------------
-
         const fileContent =
           corrigirTextoUTF8(
             fileContentRaw
@@ -2142,31 +2457,30 @@ else:
           );
 
         const searchTarget =
-          typeof body.searchTarget === 'string'
+          typeof body.searchTarget ===
+          'string'
             ? corrigirTextoUTF8(
                 body.searchTarget
               )
             : undefined;
 
         const replaceWith =
-          typeof body.replaceWith === 'string'
+          typeof body.replaceWith ===
+          'string'
             ? corrigirTextoUTF8(
                 body.replaceWith
               )
             : undefined;
-          
-   
-        // ------------------------------------------------------
-        // VALIDAÇÕES
-        // ------------------------------------------------------
 
         if (
           typeof fileContent !==
             'string' ||
-          fileContent.length === 0
+          fileContent.length ===
+            0
         ) {
           return res.status(400).json({
-            success: false,
+            success:
+              false,
 
             ponteVersion:
               'v2',
@@ -2183,7 +2497,8 @@ else:
             0
         ) {
           return res.status(400).json({
-            success: false,
+            success:
+              false,
 
             ponteVersion:
               'v2',
@@ -2192,10 +2507,6 @@ else:
               'Campo obrigatório ausente: "instruction" (ou "instrucao") com a descrição da alteração.',
           });
         }
-
-        // ------------------------------------------------------
-        // NOMES SEGUROS
-        // ------------------------------------------------------
 
         const timestamp =
           Date.now();
@@ -2232,10 +2543,6 @@ else:
             `${baseOriginalWithoutExt}_alex_v2_${timestamp}.py`;
         }
 
-        // ------------------------------------------------------
-        // ORIGINAL
-        // ------------------------------------------------------
-
         const originalSaveFilename =
           `${baseOriginalWithoutExt}_original_${timestamp}.py`;
 
@@ -2252,7 +2559,9 @@ else:
           )
         ) {
           return res.status(403).json({
-            success: false,
+            success:
+              false,
+
             error:
               'Caminho do arquivo original inválido.',
           });
@@ -2274,30 +2583,19 @@ else:
             fileContent
           );
 
-        // ------------------------------------------------------
-        // ALTERAÇÃO
-        // ------------------------------------------------------
-
         const {
           newContent,
-          summary: transformSummary,
+          summary:
+            transformSummary,
         } =
           applyLocalTransformation(
             fileContent,
-            String(instruction),
-            typeof searchTarget ===
-              'string'
-              ? searchTarget
-              : undefined,
-            typeof replaceWith ===
-              'string'
-              ? replaceWith
-              : undefined
+            String(
+              instruction
+            ),
+            searchTarget,
+            replaceWith
           );
-
-        // ------------------------------------------------------
-        // ARQUIVO DE SAÍDA
-        // ------------------------------------------------------
 
         let finalTargetFilename =
           safeOutputName;
@@ -2315,13 +2613,14 @@ else:
           )
         ) {
           return res.status(403).json({
-            success: false,
+            success:
+              false,
+
             error:
               'Caminho do arquivo processado inválido.',
           });
         }
 
-        // Nunca sobrescrever.
         if (
           fs.existsSync(
             processedFilePath
@@ -2359,10 +2658,6 @@ else:
             newContent
           );
 
-        // ------------------------------------------------------
-        // COMPILAÇÃO
-        // ------------------------------------------------------
-
         const python =
           getPythonCommand();
 
@@ -2374,7 +2669,9 @@ else:
             processedFilePath
           )}`,
           {
-            timeout: 8000,
+            timeout:
+              8000,
+
             maxBuffer:
               10 * 1024 * 1024,
           },
@@ -2383,13 +2680,12 @@ else:
             compileStdout,
             compileStderr
           ) => {
-            if (compileErr) {
-              const durationMs =
-                Date.now() -
-                startExecTime;
-
+            if (
+              compileErr
+            ) {
               return res.json({
-                success: false,
+                success:
+                  false,
 
                 ponteVersion:
                   'v2',
@@ -2422,7 +2718,8 @@ else:
                       : 1,
 
                   stdout:
-                    compileStdout || '',
+                    compileStdout ||
+                    '',
 
                   stderr:
                     (
@@ -2430,7 +2727,9 @@ else:
                       compileErr.message
                     ).trim(),
 
-                  durationMs,
+                  durationMs:
+                    Date.now() -
+                    startExecTime,
                 },
 
                 originalFile: {
@@ -2490,16 +2789,14 @@ else:
               });
             }
 
-            // --------------------------------------------------
-            // EXECUÇÃO RUNTIME
-            // --------------------------------------------------
-
             exec(
               `${python} ${getShellSafePath(
                 processedFilePath
               )}`,
               {
-                timeout: 10000,
+                timeout:
+                  10000,
+
                 maxBuffer:
                   10 * 1024 * 1024,
               },
@@ -2552,10 +2849,12 @@ else:
                         : 0,
 
                     stdout:
-                      execStdout || '',
+                      execStdout ||
+                      '',
 
                     stderr:
-                      execStderr || '',
+                      execStderr ||
+                      '',
 
                     durationMs,
                   },
@@ -2621,7 +2920,8 @@ else:
         );
       } catch (err: any) {
         return res.status(500).json({
-          success: false,
+          success:
+            false,
 
           ponteVersion:
             'v2',
@@ -2652,7 +2952,9 @@ else:
       ];
 
       if (
-        !allowed.includes(filename)
+        !allowed.includes(
+          filename
+        )
       ) {
         return res.status(403).send(
           'Acesso negado ao arquivo solicitado.'
@@ -2666,7 +2968,9 @@ else:
         );
 
       if (
-        !fs.existsSync(filePath)
+        !fs.existsSync(
+          filePath
+        )
       ) {
         return res.status(404).send(
           'Arquivo não encontrado no disco.'
@@ -2681,17 +2985,22 @@ else:
   );
 
   // ============================================================
-  // ROTA DE SAÚDE SIMPLES
+  // ROTA DE SAÚDE
   // ============================================================
 
   app.get(
     '/api/health',
     (req, res) => {
       return res.json({
-        success: true,
-        status: 'online',
+        success:
+          true,
+
+        status:
+          'online',
+
         ponte:
           'Ponte Alex v2',
+
         timestamp:
           Date.now(),
       });
@@ -2699,7 +3008,249 @@ else:
   );
 
   // ============================================================
-  // VITE
+  // ⭐ PONTE ALEX V2 — CRIAR ARQUIVO
+  // ============================================================
+
+  app.post(
+    '/api/ponte/v2/criar-arquivo',
+    (req, res) => {
+      try {
+        const {
+          filename,
+          code,
+        } = req.body ?? {};
+
+        const filenameCorrigido =
+          corrigirTextoUTF8(
+            filename
+          );
+
+        const codeCorrigido =
+          corrigirTextoUTF8(
+            code
+          );
+
+        // --------------------------------------------------------
+        // VALIDAÇÃO
+        // --------------------------------------------------------
+
+        if (
+          !filenameCorrigido.trim()
+        ) {
+          return res.status(400).json({
+            success:
+              false,
+
+            ok:
+              false,
+
+            error:
+              'Informe o nome do arquivo.',
+          });
+        }
+
+        if (
+          typeof codeCorrigido !==
+          'string'
+        ) {
+          return res.status(400).json({
+            success:
+              false,
+
+            ok:
+              false,
+
+            error:
+              'Informe o código Python.',
+          });
+        }
+
+        // --------------------------------------------------------
+        // NOME SEGURO
+        // --------------------------------------------------------
+
+        const timestamp =
+          Date.now();
+
+        const safeFilename =
+          sanitizeSafePythonFilename(
+            filenameCorrigido.trim(),
+            'codigo'
+          );
+
+        // --------------------------------------------------------
+        // CAMINHO FINAL
+        // --------------------------------------------------------
+
+        let finalFilename =
+          safeFilename;
+
+        let filePath =
+          path.join(
+            processedDir,
+            finalFilename
+          );
+
+        // --------------------------------------------------------
+        // NUNCA SOBRESCREVER
+        // --------------------------------------------------------
+
+        if (
+          fs.existsSync(
+            filePath
+          )
+        ) {
+          const namePart =
+            path.basename(
+              safeFilename,
+              '.py'
+            );
+
+          finalFilename =
+            `${namePart}_${timestamp}.py`;
+
+          filePath =
+            path.join(
+              processedDir,
+              finalFilename
+            );
+        }
+
+        // --------------------------------------------------------
+        // PROTEÇÃO DE CAMINHO
+        // --------------------------------------------------------
+
+        if (
+          !isInsideDirectory(
+            filePath,
+            processedDir
+          )
+        ) {
+          return res.status(403).json({
+            success:
+              false,
+
+            ok:
+              false,
+
+            error:
+              'Caminho do arquivo inválido.',
+          });
+        }
+
+        // --------------------------------------------------------
+        // SALVAR ARQUIVO
+        // --------------------------------------------------------
+
+        fs.writeFileSync(
+          filePath,
+          codeCorrigido,
+          {
+            encoding:
+              'utf8',
+            flag:
+              'wx',
+          }
+        );
+
+        // --------------------------------------------------------
+        // ESTATÍSTICAS
+        // --------------------------------------------------------
+
+        const stats =
+          fs.statSync(
+            filePath
+          );
+
+        const sha256 =
+          calculateSha256(
+            codeCorrigido
+          );
+
+        const lines =
+          codeCorrigido.split(
+            '\n'
+          ).length;
+
+        const downloadUrl =
+          `/api/download/processed/${encodeURIComponent(
+            finalFilename
+          )}`;
+
+        // --------------------------------------------------------
+        // RESPOSTA PARA ALEX IA ULTRA
+        // --------------------------------------------------------
+
+        return res.status(201).json({
+          success:
+            true,
+
+          ok:
+            true,
+
+          ponte:
+            'Ponte Alex v2',
+
+          version:
+            '2.0.0',
+
+          status:
+            'ARQUIVO_CRIADO',
+
+          message:
+            'Arquivo Python criado com sucesso e salvo na Ponte Alex v2.',
+
+          file: {
+            filename:
+              finalFilename,
+
+            size:
+              stats.size,
+
+            lines,
+
+            sha256,
+
+            encoding:
+              'UTF-8',
+
+            path:
+              `storage/processed/${finalFilename}`,
+
+            downloadUrl,
+
+            content:
+              codeCorrigido,
+          },
+
+          neverOverwritten:
+            true,
+
+          timestamp,
+        });
+
+      } catch (error: any) {
+        console.error(
+          'Erro ao criar arquivo:',
+          error
+        );
+
+        return res.status(500).json({
+          success:
+            false,
+
+          ok:
+            false,
+
+          error:
+            `Não foi possível criar o arquivo: ${error.message}`,
+        });
+      }
+    }
+  );
+
+  // ============================================================
+  // START SERVER
   // ============================================================
 
   if (
@@ -2709,10 +3260,12 @@ else:
     const vite =
       await createViteServer({
         server: {
-          middlewareMode: true,
+          middlewareMode:
+            true,
         },
 
-        appType: 'spa',
+        appType:
+          'spa',
       });
 
     app.use(
@@ -2743,158 +3296,11 @@ else:
       }
     );
   }
-  // ============================================================
-  // ============================================================
-  // 🔤 CORREÇÃO AUTOMÁTICA DE TEXTO UTF-8
-  // ============================================================
-
-  function corrigirTextoUTF8(texto: unknown): string {
-    if (typeof texto !== 'string') {
-      return String(texto ?? '');
-    }
-
-    // Não altera texto que aparentemente já está correto.
-    const sinaisMojibake = [
-      'Ã',
-      'Â',
-      'â€',
-      'â€™',
-      'â€œ',
-      'â€',
-      'â€“',
-      'â€”',
-      'â€¦',
-    ];
-
-    const pareceMojibake =
-      sinaisMojibake.some((sinal) =>
-        texto.includes(sinal)
-      );
-
-    if (!pareceMojibake) {
-      return texto;
-    }
-
-    try {
-      const corrigido =
-        Buffer.from(
-          texto,
-          'latin1'
-        ).toString('utf8');
-
-      // Só aceita a conversão se o resultado
-      // não contiver caracteres inválidos.
-      if (
-        !corrigido.includes('\uFFFD')
-      ) {
-        return corrigido;
-      }
-    } catch {
-      // Mantém o texto original.
-    }
-
-    return texto;
-  }
-  // ============================================================
-  // PONTE ALEX V2 — CRIAR ARQUIVO PARA DOWNLOAD
-  // ============================================================
-
-  app.post(
-    '/api/ponte/v2/criar-arquivo',
-    express.json({ limit: '10mb' }),
-    (req, res) => {
-      try {
-        const { filename, code } =
-          req.body ?? {};
-
-        // --------------------------------------------------------
-        // 🔤 CORREÇÃO UTF-8
-        // --------------------------------------------------------
-
-        const filenameCorrigido =
-          corrigirTextoUTF8(filename);
-
-        const codeCorrigido =
-          corrigirTextoUTF8(code);
-
-        // --------------------------------------------------------
-        // 🔎 VALIDAÇÃO
-        // --------------------------------------------------------
-
-        if (
-          !filenameCorrigido.trim()
-        ) {
-          return res.status(400).json({
-            ok: false,
-            error:
-              'Informe o nome do arquivo.',
-          });
-        }
-
-        if (
-          typeof codeCorrigido !==
-          'string'
-        ) {
-          return res.status(400).json({
-            ok: false,
-            error:
-              'Informe o código.',
-          });
-        }
-
-        // --------------------------------------------------------
-        // 🔐 NOME SEGURO
-        // --------------------------------------------------------
-
-        const safeFilename =
-          sanitizeSafePythonFilename(
-            filenameCorrigido.trim(),
-            'codigo'
-          );
-
-        // --------------------------------------------------------
-        // 📄 CABEÇALHOS UTF-8
-        // --------------------------------------------------------
-
-        res.setHeader(
-          'Content-Type',
-          'text/x-python; charset=utf-8'
-        );
-
-        res.setHeader(
-          'Content-Disposition',
-          `attachment; filename="${safeFilename}"`
-        );
-
-        // --------------------------------------------------------
-        // 💾 ENVIO DO CÓDIGO EM UTF-8
-        // --------------------------------------------------------
-
-        return res.end(
-          Buffer.from(
-            codeCorrigido,
-            'utf8'
-          )
-        );
-
-      } catch (error) {
-        console.error(
-          'Erro ao criar arquivo:',
-          error
-        );
-
-        return res.status(500).json({
-          ok: false,
-          error:
-            'Não foi possível criar o arquivo.',
-        });
-      }
-    }
-  );
 
   // ============================================================
-  // START SERVER
+  // START
   // ============================================================
+
   app.listen(
     PORT,
     '0.0.0.0',
@@ -2929,6 +3335,10 @@ else:
       console.log(
         'Armazenamento de processados: storage/processed'
       );
+
+      console.log(
+        'Criação de arquivos: POST /api/ponte/v2/criar-arquivo'
+      );
     }
   );
 }
@@ -2944,6 +3354,7 @@ startServer().catch(
       err
     );
 
-    process.exitCode = 1;
+    process.exitCode =
+      1;
   }
 );
