@@ -2752,6 +2752,34 @@ else:
     );
   }
   // ============================================================
+  // 🔤 CORREÇÃO AUTOMÁTICA DE TEXTO UTF-8
+  // ============================================================
+
+  function corrigirTextoUTF8(texto: unknown): string {
+    if (typeof texto !== 'string') {
+      return String(texto ?? '');
+    }
+
+    // Corrige casos como:
+    // "OlÃ¡"     -> "Olá"
+    // "cÃ³digo"  -> "código"
+    // "InstruÃ§Ã£o" -> "Instrução"
+
+    if (
+      !texto.includes('Ã') &&
+      !texto.includes('Â') &&
+      !texto.includes('â')
+    ) {
+      return texto;
+    }
+
+    try {
+      return Buffer.from(texto, 'latin1').toString('utf8');
+    } catch {
+      return texto;
+    }
+  }
+  // ============================================================
   // PONTE ALEX V2 — CRIAR ARQUIVO PARA DOWNLOAD
   // ============================================================
 
