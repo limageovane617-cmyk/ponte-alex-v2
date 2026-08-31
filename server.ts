@@ -343,7 +343,7 @@ async function startServer() {
   }
 
   // ============================================================
-  // UTF-8
+  // UTF-8 — CORREÇÃO SEGURA DE MOJIBAKE
   // ============================================================
 
   function corrigirTextoUTF8(
@@ -355,6 +355,15 @@ async function startServer() {
       return String(texto ?? '');
     }
 
+    if (!texto) {
+      return '';
+    }
+
+    // ----------------------------------------------------------
+    // Detecta sinais comuns de texto UTF-8 interpretado
+    // incorretamente como Latin-1/Windows-1252.
+    // ----------------------------------------------------------
+
     const sinaisMojibake = [
       'Ã',
       'Â',
@@ -365,17 +374,32 @@ async function startServer() {
       'â€“',
       'â€”',
       'â€¦',
+      'ðŸ',
     ];
 
-    const pareceMojibake =
-      sinaisMojibake.some(
-        (sinal) =>
-          texto.includes(sinal)
+    const quantidadeSinais =
+      sinaisMojibake.reduce(
+        (total, sinal) => {
+          return (
+            total +
+            texto.split(sinal).length -
+            1
+          );
+        },
+        0
       );
 
-    if (!pareceMojibake) {
+    // Se não houver sinais de corrupção,
+    // preserva exatamente o texto recebido.
+    if (
+      quantidadeSinais === 0
+    ) {
       return texto;
     }
+
+    // ----------------------------------------------------------
+    // Tenta recuperar o texto original.
+    // ----------------------------------------------------------
 
     try {
       const corrigido =
@@ -384,15 +408,46 @@ async function startServer() {
           'latin1'
         ).toString('utf8');
 
+      // --------------------------------------------------------
+      // Só aceita a correção se:
+      //
+      // 1. não gerar caractere inválido;
+      // 2. reduzir os sinais de mojibake;
+      // 3. não transformar o texto em algo vazio.
+      // --------------------------------------------------------
+
       if (
+        corrigido &&
         !corrigido.includes(
           '\uFFFD'
         )
       ) {
-        return corrigido;
+        const quantidadeDepois =
+          sinaisMojibake.reduce(
+            (
+              total,
+              sinal
+            ) => {
+              return (
+                total +
+                corrigido
+                  .split(sinal)
+                  .length -
+                1
+              );
+            },
+            0
+          );
+
+        if (
+          quantidadeDepois <
+          quantidadeSinais
+        ) {
+          return corrigido;
+        }
       }
     } catch {
-      // Mantém original.
+      // Mantém o texto original se a conversão falhar.
     }
 
     return texto;
