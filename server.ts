@@ -3010,58 +3010,76 @@ else:
   // ============================================================
   // ⭐ PONTE ALEX V2 — CRIAR ARQUIVO
   // ============================================================
+  // ============================================================
+  // ⭐ PONTE ALEX V2 — CRIAR ARQUIVO
+  // ============================================================
 
   app.post(
     '/api/ponte/v2/criar-arquivo',
     (req, res) => {
       try {
-        const {
-          filename,
-          code,
-        } = req.body ?? {};
+        const body = req.body ?? {};
+
+        // --------------------------------------------------------
+        // RECEBER DADOS
+        // --------------------------------------------------------
+
+        const filenameRaw =
+          body.filename ??
+          body.nomeArquivo ??
+          body.nome ??
+          'codigo_alex.py';
+
+        const codeRaw =
+          body.code ??
+          body.codigo ??
+          body.fileContent ??
+          body.content ??
+          '';
+
+        // --------------------------------------------------------
+        // CORREÇÃO UTF-8
+        // --------------------------------------------------------
 
         const filenameCorrigido =
           corrigirTextoUTF8(
-            filename
-          );
+            String(filenameRaw)
+          ).trim();
 
         const codeCorrigido =
           corrigirTextoUTF8(
-            code
+            String(codeRaw)
           );
 
         // --------------------------------------------------------
         // VALIDAÇÃO
         // --------------------------------------------------------
 
-        if (
-          !filenameCorrigido.trim()
-        ) {
+        if (!filenameCorrigido) {
           return res.status(400).json({
-            success:
-              false,
-
-            ok:
-              false,
-
-            error:
-              'Informe o nome do arquivo.',
+            success: false,
+            ok: false,
+            error: 'Informe o nome do arquivo.',
           });
         }
 
         if (
-          typeof codeCorrigido !==
-          'string'
+          typeof codeRaw !== 'string' &&
+          codeRaw !== undefined &&
+          codeRaw !== null
         ) {
           return res.status(400).json({
-            success:
-              false,
+            success: false,
+            ok: false,
+            error: 'Informe o código Python como texto.',
+          });
+        }
 
-            ok:
-              false,
-
-            error:
-              'Informe o código Python.',
+        if (!codeCorrigido.length) {
+          return res.status(400).json({
+            success: false,
+            ok: false,
+            error: 'Informe o código Python.',
           });
         }
 
@@ -3069,13 +3087,10 @@ else:
         // NOME SEGURO
         // --------------------------------------------------------
 
-        const timestamp =
-          Date.now();
-
         const safeFilename =
           sanitizeSafePythonFilename(
-            filenameCorrigido.trim(),
-            'codigo'
+            filenameCorrigido,
+            'codigo_alex'
           );
 
         // --------------------------------------------------------
@@ -3092,7 +3107,27 @@ else:
           );
 
         // --------------------------------------------------------
+        // PROTEÇÃO DE CAMINHO
+        // --------------------------------------------------------
+
+        if (
+          !isInsideDirectory(
+            filePath,
+            processedDir
+          )
+        ) {
+          return res.status(403).json({
+            success: false,
+            ok: false,
+            error: 'Caminho do arquivo inválido.',
+          });
+        }
+
+        // --------------------------------------------------------
         // NUNCA SOBRESCREVER
+        //
+        // Se o nome já existir, somente então cria uma
+        // variação com timestamp.
         // --------------------------------------------------------
 
         if (
@@ -3106,6 +3141,9 @@ else:
               '.py'
             );
 
+          const timestamp =
+            Date.now();
+
           finalFilename =
             `${namePart}_${timestamp}.py`;
 
@@ -3114,44 +3152,45 @@ else:
               processedDir,
               finalFilename
             );
+
+          if (
+            !isInsideDirectory(
+              filePath,
+              processedDir
+            )
+          ) {
+            return res.status(403).json({
+              success: false,
+              ok: false,
+              error: 'Caminho do arquivo inválido.',
+            });
+          }
         }
 
         // --------------------------------------------------------
-        // PROTEÇÃO DE CAMINHO
-        // --------------------------------------------------------
-
-        if (
-          !isInsideDirectory(
-            filePath,
-            processedDir
-          )
-        ) {
-          return res.status(403).json({
-            success:
-              false,
-
-            ok:
-              false,
-
-            error:
-              'Caminho do arquivo inválido.',
-          });
-        }
-
-        // --------------------------------------------------------
-        // SALVAR ARQUIVO
+        // SALVAR EM UTF-8
         // --------------------------------------------------------
 
         fs.writeFileSync(
           filePath,
           codeCorrigido,
           {
-            encoding:
-              'utf8',
-            flag:
-              'wx',
+            encoding: 'utf8',
+            flag: 'wx',
           }
         );
+
+        // --------------------------------------------------------
+        // CONFIRMAR CONTEÚDO GRAVADO
+        // --------------------------------------------------------
+
+        const savedContent =
+          fs.readFileSync(
+            filePath,
+            {
+              encoding: 'utf8',
+            }
+          );
 
         // --------------------------------------------------------
         // ESTATÍSTICAS
@@ -3164,11 +3203,11 @@ else:
 
         const sha256 =
           calculateSha256(
-            codeCorrigido
+            savedContent
           );
 
         const lines =
-          codeCorrigido.split(
+          savedContent.split(
             '\n'
           ).length;
 
@@ -3182,11 +3221,8 @@ else:
         // --------------------------------------------------------
 
         return res.status(201).json({
-          success:
-            true,
-
-          ok:
-            true,
+          success: true,
+          ok: true,
 
           ponte:
             'Ponte Alex v2',
@@ -3204,6 +3240,9 @@ else:
             filename:
               finalFilename,
 
+            requestedFilename:
+              filenameCorrigido,
+
             size:
               stats.size,
 
@@ -3220,27 +3259,25 @@ else:
             downloadUrl,
 
             content:
-              codeCorrigido,
+              savedContent,
           },
 
           neverOverwritten:
             true,
 
-          timestamp,
+          timestamp:
+            Date.now(),
         });
 
       } catch (error: any) {
         console.error(
-          'Erro ao criar arquivo:',
+          'Erro ao criar arquivo na Ponte Alex v2:',
           error
         );
 
         return res.status(500).json({
-          success:
-            false,
-
-          ok:
-            false,
+          success: false,
+          ok: false,
 
           error:
             `Não foi possível criar o arquivo: ${error.message}`,
@@ -3248,7 +3285,7 @@ else:
       }
     }
   );
-
+  
   // ============================================================
   // START SERVER
   // ============================================================
