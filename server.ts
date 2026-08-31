@@ -2797,7 +2797,7 @@ else:
           corrigirTextoUTF8(code);
 
         if (
-          typeof filename !== "string" ||
+          typeof filenameCorrigido !== "string"
           !filename.trim()
         ) {
           return res.status(400).json({
