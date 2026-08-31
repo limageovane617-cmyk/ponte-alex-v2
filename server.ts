@@ -343,7 +343,7 @@ async function startServer() {
   }
 
   // ============================================================
-  // UTF-8 — CORREÇÃO SEGURA DE MOJIBAKE
+  // UTF-8 — CORREÇÃO ROBUSTA DE MOJIBAKE
   // ============================================================
 
   function corrigirTextoUTF8(
@@ -361,91 +361,201 @@ async function startServer() {
       );
     }
 
-    // ----------------------------------------------------------
-    // TEXTO NORMAL:
-    // NÃO ALTERAR
-    // ----------------------------------------------------------
-
-    if (
-      !texto
-    ) {
+    if (!texto) {
       return '';
     }
 
     // ----------------------------------------------------------
-    // DETECTAR SINAIS COMUNS DE MOJIBAKE
-    // Exemplo:
-    // "vocÃª"  -> "você"
-    // "estÃ¡"  -> "está"
-    // "ModificaÃ§Ã£o" -> "Modificação"
+    // CORRIGIR MOJIBAKE REPETIDAMENTE
+    //
+    // Exemplos:
+    // vocÃª        -> você
+    // estÃ¡        -> está
+    // modificaÃ§Ã£o -> modificação
+    // portuguÃªs   -> português
+    // OlÃ¡         -> Olá
+    //
+    // O loop permite corrigir casos em que o texto foi
+    // codificado/decodificado incorretamente mais de uma vez.
     // ----------------------------------------------------------
 
     const sinaisMojibake = [
       'Ã',
       'Â',
-      'â€',
-      'â€™',
-      'â€œ',
-      'â€',
-      'â€“',
-      'â€”',
-      'â€¦',
-      'ðŸ',
+      'â',
+      'ð',
+      '�',
     ];
 
-    const pareceMojibake =
-      sinaisMojibake.some(
-        (sinal) =>
-          texto.includes(
-            sinal
-          )
-      );
+    let atual = texto;
 
-    // Se não houver sinais de texto corrompido,
-    // mantém exatamente o texto original.
-    if (
-      !pareceMojibake
+    for (
+      let tentativa = 0;
+      tentativa < 3;
+      tentativa++
     ) {
-      return texto;
+      const pareceMojibake =
+        sinaisMojibake.some(
+          (sinal) =>
+            atual.includes(sinal)
+        );
+
+      if (
+        !pareceMojibake
+      ) {
+        break;
+      }
+
+      try {
+        const candidato =
+          Buffer.from(
+            atual,
+            'latin1'
+          ).toString(
+            'utf8'
+          );
+
+        // ------------------------------------------------------
+        // NÃO ACEITAR UMA CONVERSÃO QUE GERE �
+        // ------------------------------------------------------
+
+        if (
+          candidato.includes(
+            '\uFFFD'
+          )
+        ) {
+          break;
+        }
+
+        // ------------------------------------------------------
+        // SÓ CONTINUAR SE HOUVER MUDANÇA
+        // ------------------------------------------------------
+
+        if (
+          candidato === atual
+        ) {
+          break;
+        }
+
+        atual =
+          candidato;
+
+      } catch {
+        break;
+      }
     }
 
     // ----------------------------------------------------------
-    // TENTAR RECUPERAR TEXTO UTF-8 INTERPRETADO COMO LATIN1
+    // CORREÇÕES DIRETAS DE SEQUÊNCIAS COMUNS
+    //
+    // Essas substituições funcionam como uma camada final de
+    // segurança para caracteres que podem permanecer após a
+    // conversão.
+    // ----------------------------------------------------------
+
+    const correcoesDiretas: Array<
+      [string, string]
+    > = [
+      ['Ã¡', 'á'],
+      ['Ã©', 'é'],
+      ['Ã­', 'í'],
+      ['Ã³', 'ó'],
+      ['Ãº', 'ú'],
+
+      ['Ã ', 'à'],
+      ['Ã£', 'ã'],
+      ['Ãµ', 'õ'],
+      ['Ã¢', 'â'],
+      ['Ãª', 'ê'],
+      ['Ã´', 'ô'],
+
+      ['Ã§', 'ç'],
+
+      ['Ã‰', 'É'],
+      ['Ã€', 'À'],
+      ['Ã‚', 'Â'],
+      ['ÃŠ', 'Ê'],
+      ['Ã“', 'Ó'],
+      ['Ã”', 'Ô'],
+      ['Ãš', 'Ú'],
+      ['Ã‡', 'Ç'],
+
+      ['Âº', 'º'],
+      ['Âª', 'ª'],
+      ['Â°', '°'],
+      ['Â·', '·'],
+
+      ['â€™', '’'],
+      ['â€œ', '“'],
+      ['â€', '”'],
+      ['â€“', '–'],
+      ['â€”', '—'],
+      ['â€¦', '…'],
+      ['â€¢', '•'],
+
+      ['ðŸ˜Š', '😊'],
+      ['ðŸ˜‚', '😂'],
+      ['ðŸš€', '🚀'],
+      ['ðŸ¤–', '🤖'],
+      ['ðŸŒ‰', '🌉'],
+      ['ðŸ“„', '📄'],
+      ['ðŸ“¥', '📥'],
+      ['âœ…', '✅'],
+      ['âš ï¸', '⚠️'],
+      ['âŒ', '❌'],
+    ];
+
+    for (
+      const [
+        errado,
+        correto,
+      ] of correcoesDiretas
+    ) {
+      atual =
+        atual.split(
+          errado
+        ).join(
+          correto
+        );
+    }
+
+    // ----------------------------------------------------------
+    // NORMALIZAR QUEBRAS DE LINHA
+    // ----------------------------------------------------------
+
+    atual =
+      atual
+        .replace(
+          /\r\n/g,
+          '\n'
+        )
+        .replace(
+          /\r/g,
+          '\n'
+        );
+
+    // ----------------------------------------------------------
+    // NORMALIZAÇÃO UNICODE
+    //
+    // NFC mantém caracteres como "é", "ã" e "ç" na forma
+    // Unicode normalizada.
     // ----------------------------------------------------------
 
     try {
-      const corrigido =
-        Buffer.from(
-          texto,
-          'latin1'
-        ).toString(
-          'utf8'
+      atual =
+        atual.normalize(
+          'NFC'
         );
-
-      // --------------------------------------------------------
-      // SÓ ACEITAR A CORREÇÃO SE ELA NÃO GERAR
-      // CARACTERE DE SUBSTITUIÇÃO �
-      // --------------------------------------------------------
-
-      if (
-        !corrigido.includes(
-          '\uFFFD'
-        )
-      ) {
-        return corrigido;
-      }
     } catch {
-      // Se falhar, mantém o texto original.
+      // Mantém o texto caso normalize não esteja disponível.
     }
 
     // ----------------------------------------------------------
-    // NÃO CONSEGUIU CORRIGIR:
-    // PRESERVAR O TEXTO ORIGINAL
+    // RETORNO FINAL
     // ----------------------------------------------------------
 
-    return texto;
-  }
-
+    return atual;
+        }
   // ============================================================
   // STATUS
   // ============================================================
