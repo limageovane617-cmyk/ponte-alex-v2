@@ -2130,39 +2130,52 @@ else:
 
         // ------------------------------------------------------
         // BODY
+        // --------------------------
+        // ------------------------------------------------------
+        // BODY
         // ------------------------------------------------------
 
         const body =
           req.body || {};
 
-        const fileContent =
+        const fileContentRaw =
           body.fileContent ??
           body.codigo ??
           body.arquivo ??
           body.content;
 
-        const instruction =
+        const instructionRaw =
           body.instruction ??
           body.instrucao ??
           body.comando;
 
-        const rawOriginalFilename =
-          body.filename ??
-          body.nome_original ??
-          body.nomeOriginal ??
-          'script_entrada.py';
+        // ------------------------------------------------------
+        // 🔤 CORREÇÃO UTF-8
+        // ------------------------------------------------------
 
-        const rawOutputFilename =
-          body.outputFilename ??
-          body.nome_saida ??
-          body.nomeSaida ??
-          body.desiredOutputFilename;
+        const fileContent =
+          (
+    fileContentRaw
+  );
 
-        const searchTarget =
-          body.searchTarget;
+const instruction =
+  corrigirTextoUTF8(
+    instructionRaw
+  );
 
-        const replaceWith =
-          body.replaceWith;
+const searchTarget =
+  typeof body.searchTarget === 'string'
+    ? corrigirTextoUTF8(
+        body.searchTarget
+      )
+    : undefined;
+
+const replaceWith =
+  typeof body.replaceWith === 'string'
+    ? corrigirTextoUTF8(
+        body.replaceWith
+      )
+    : undefined;
 
         // ------------------------------------------------------
         // VALIDAÇÕES
