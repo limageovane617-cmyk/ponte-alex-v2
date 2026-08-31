@@ -2130,9 +2130,6 @@ else:
 
         // ------------------------------------------------------
         // BODY
-        // --------------------------
-        // ------------------------------------------------------
-        // BODY
         // ------------------------------------------------------
 
         const body =
@@ -2148,6 +2145,18 @@ else:
           body.instruction ??
           body.instrucao ??
           body.comando;
+
+        const rawOriginalFilename =
+          body.filename ??
+          body.nomeArquivo ??
+          body.nome ??
+          'script_alex.py';
+
+        const rawOutputFilename =
+          body.outputFilename ??
+          body.nomeArquivoSaida ??
+          body.output ??
+          undefined;
 
         // ------------------------------------------------------
         // 🔤 CORREÇÃO UTF-8
