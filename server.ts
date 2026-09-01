@@ -2758,28 +2758,29 @@ else:
           undefined;
 
         const fileContent =
-          corrigirTextoUTF8(
-            fileContentRaw
-          );
+          fileContentRaw;
 
         const instruction =
-          corrigirTextoUTF8(
-            instructionRaw
-          );
-        console.log('===== UTF8 DIAGNÓSTICO =====');
-        console.log('ANTES fileContentRaw:', fileContentRaw);
-        console.log('DEPOIS fileContent:', fileContent);
-        console.log('ANTES instructionRaw:', instructionRaw);
-        console.log('DEPOIS instruction:', instruction);
-        console.log('============================');
+          instructionRaw;
 
         const searchTarget =
           typeof body.searchTarget ===
           'string'
-            ? corrigirTextoUTF8(
-                body.searchTarget
-              )
+            ? body.searchTarget
             : undefined;
+
+        const replaceWith =
+          typeof body.replaceWith ===
+          'string'
+            ? body.replaceWith
+            : undefined;
+
+        console.log('===== PONTE ALEX V2 - TEXTO RECEBIDO =====');
+        console.log('fileContent:', fileContent);
+        console.log('instruction:', instruction);
+        console.log('searchTarget:', searchTarget);
+        console.log('replaceWith:', replaceWith);
+        console.log('===========================================');
 
         const replaceWith =
           typeof body.replaceWith ===
