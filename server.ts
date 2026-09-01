@@ -2782,14 +2782,6 @@ else:
         console.log('replaceWith:', replaceWith);
         console.log('===========================================');
 
-        const replaceWith =
-          typeof body.replaceWith ===
-          'string'
-            ? corrigirTextoUTF8(
-                body.replaceWith
-              )
-            : undefined;
-
         if (
           typeof fileContent !==
             'string' ||
