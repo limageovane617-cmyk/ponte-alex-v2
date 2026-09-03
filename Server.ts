@@ -343,16 +343,12 @@ async function startServer() {
   }
 
   // ============================================================
-  // UTF-8 — CORREÇÃO ROBUSTA DE MOJIBAKE
+  // UTF-8 — CORREÇÃO SEGURA DE MOJIBAKE
   // ============================================================
 
   function corrigirTextoUTF8(
     texto: unknown
   ): string {
-    // ----------------------------------------------------------
-    // GARANTIR STRING
-    // ----------------------------------------------------------
-
     if (
       typeof texto !== 'string'
     ) {
@@ -365,43 +361,35 @@ async function startServer() {
       return '';
     }
 
-    // ----------------------------------------------------------
-    // CORRIGIR MOJIBAKE REPETIDAMENTE
-    //
-    // Exemplos:
-    // vocÃª        -> você
-    // estÃ¡        -> está
-    // modificaÃ§Ã£o -> modificação
-    // portuguÃªs   -> português
-    // OlÃ¡         -> Olá
-    //
-    // O loop permite corrigir casos em que o texto foi
-    // codificado/decodificado incorretamente mais de uma vez.
-    // ----------------------------------------------------------
-
-    const sinaisMojibake = [
-      'Ã',
-      'Â',
-      'â',
-      'ð',
-      '�',
-    ];
-
     let atual = texto;
+
+    // ----------------------------------------------------------
+    // Detecta somente padrões típicos de UTF-8 interpretado
+    // incorretamente como Latin-1/Windows-1252.
+    // ----------------------------------------------------------
+
+    const pareceMojibake =
+      (valor: string): boolean => {
+        return (
+          valor.includes('Ã') ||
+          valor.includes('Â') ||
+          valor.includes('â€') ||
+          valor.includes('ðŸ') ||
+          valor.includes('�')
+        );
+      };
+
+    // ----------------------------------------------------------
+    // Corrige no máximo duas camadas de dupla interpretação.
+    // ----------------------------------------------------------
 
     for (
       let tentativa = 0;
-      tentativa < 3;
+      tentativa < 2;
       tentativa++
     ) {
-      const pareceMojibake =
-        sinaisMojibake.some(
-          (sinal) =>
-            atual.includes(sinal)
-        );
-
       if (
-        !pareceMojibake
+        !pareceMojibake(atual)
       ) {
         break;
       }
@@ -415,10 +403,8 @@ async function startServer() {
             'utf8'
           );
 
-        // ------------------------------------------------------
-        // NÃO ACEITAR UMA CONVERSÃO QUE GERE �
-        // ------------------------------------------------------
-
+        // Nunca aceitar uma conversão que introduza
+        // caracteres de substituição Unicode.
         if (
           candidato.includes(
             '\uFFFD'
@@ -427,10 +413,7 @@ async function startServer() {
           break;
         }
 
-        // ------------------------------------------------------
-        // SÓ CONTINUAR SE HOUVER MUDANÇA
-        // ------------------------------------------------------
-
+        // Só aceitar se realmente melhorar o texto.
         if (
           candidato === atual
         ) {
@@ -439,71 +422,51 @@ async function startServer() {
 
         atual =
           candidato;
-
       } catch {
         break;
       }
     }
 
     // ----------------------------------------------------------
-    // CORREÇÕES DIRETAS DE SEQUÊNCIAS COMUNS
-    //
-    // Essas substituições funcionam como uma camada final de
-    // segurança para caracteres que podem permanecer após a
-    // conversão.
+    // Correções pontuais para sequências conhecidas que podem
+    // permanecer depois da conversão.
     // ----------------------------------------------------------
 
-    const correcoesDiretas: Array<
-      [string, string]
-    > = [
-      ['Ã¡', 'á'],
-      ['Ã©', 'é'],
-      ['Ã­', 'í'],
-      ['Ã³', 'ó'],
-      ['Ãº', 'ú'],
+    const correcoesDiretas:
+      Array<[string, string]> = [
+        ['Ã¡', 'á'],
+        ['Ã©', 'é'],
+        ['Ã­', 'í'],
+        ['Ã³', 'ó'],
+        ['Ãº', 'ú'],
+        ['Ã£', 'ã'],
+        ['Ãµ', 'õ'],
+        ['Ã¢', 'â'],
+        ['Ãª', 'ê'],
+        ['Ã´', 'ô'],
+        ['Ã§', 'ç'],
 
-      ['Ã ', 'à'],
-      ['Ã£', 'ã'],
-      ['Ãµ', 'õ'],
-      ['Ã¢', 'â'],
-      ['Ãª', 'ê'],
-      ['Ã´', 'ô'],
+        ['Ã€', 'À'],
+        ['Ã‰', 'É'],
+        ['ÃŠ', 'Ê'],
+        ['Ã“', 'Ó'],
+        ['Ã”', 'Ô'],
+        ['Ãš', 'Ú'],
+        ['Ã‡', 'Ç'],
 
-      ['Ã§', 'ç'],
+        ['Âº', 'º'],
+        ['Âª', 'ª'],
+        ['Â°', '°'],
+        ['Â·', '·'],
 
-      ['Ã‰', 'É'],
-      ['Ã€', 'À'],
-      ['Ã‚', 'Â'],
-      ['ÃŠ', 'Ê'],
-      ['Ã“', 'Ó'],
-      ['Ã”', 'Ô'],
-      ['Ãš', 'Ú'],
-      ['Ã‡', 'Ç'],
-
-      ['Âº', 'º'],
-      ['Âª', 'ª'],
-      ['Â°', '°'],
-      ['Â·', '·'],
-
-      ['â€™', '’'],
-      ['â€œ', '“'],
-      ['â€', '”'],
-      ['â€“', '–'],
-      ['â€”', '—'],
-      ['â€¦', '…'],
-      ['â€¢', '•'],
-
-      ['ðŸ˜Š', '😊'],
-      ['ðŸ˜‚', '😂'],
-      ['ðŸš€', '🚀'],
-      ['ðŸ¤–', '🤖'],
-      ['ðŸŒ‰', '🌉'],
-      ['ðŸ“„', '📄'],
-      ['ðŸ“¥', '📥'],
-      ['âœ…', '✅'],
-      ['âš ï¸', '⚠️'],
-      ['âŒ', '❌'],
-    ];
+        ['â€™', '’'],
+        ['â€œ', '“'],
+        ['â€', '”'],
+        ['â€“', '–'],
+        ['â€”', '—'],
+        ['â€¦', '…'],
+        ['â€¢', '•'],
+      ];
 
     for (
       const [
@@ -512,15 +475,13 @@ async function startServer() {
       ] of correcoesDiretas
     ) {
       atual =
-        atual.split(
-          errado
-        ).join(
-          correto
-        );
+        atual
+          .split(errado)
+          .join(correto);
     }
 
     // ----------------------------------------------------------
-    // NORMALIZAR QUEBRAS DE LINHA
+    // Normalizar quebras de linha.
     // ----------------------------------------------------------
 
     atual =
@@ -535,10 +496,7 @@ async function startServer() {
         );
 
     // ----------------------------------------------------------
-    // NORMALIZAÇÃO UNICODE
-    //
-    // NFC mantém caracteres como "é", "ã" e "ç" na forma
-    // Unicode normalizada.
+    // Normalização Unicode NFC.
     // ----------------------------------------------------------
 
     try {
@@ -550,12 +508,8 @@ async function startServer() {
       // Mantém o texto caso normalize não esteja disponível.
     }
 
-    // ----------------------------------------------------------
-    // RETORNO FINAL
-    // ----------------------------------------------------------
-
     return atual;
-        }
+  }
   // ============================================================
   // STATUS
   // ============================================================
