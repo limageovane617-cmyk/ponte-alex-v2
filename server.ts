@@ -343,7 +343,7 @@ async function startServer() {
   }
 
   // ============================================================
-  // UTF-8 — CORREÇÃO ROBUSTA DE MOJIBAKE
+  // UTF-8 — NORMALIZAÇÃO SEGURA DE TEXTO
   // ============================================================
 
   function corrigirTextoUTF8(
@@ -365,97 +365,23 @@ async function startServer() {
       return '';
     }
 
-    // ----------------------------------------------------------
-    // CORRIGIR MOJIBAKE REPETIDAMENTE
-    //
-    // Exemplos:
-    // vocÃª        -> você
-    // estÃ¡        -> está
-    // modificaÃ§Ã£o -> modificação
-    // portuguÃªs   -> português
-    // OlÃ¡         -> Olá
-    //
-    // O loop permite corrigir casos em que o texto foi
-    // codificado/decodificado incorretamente mais de uma vez.
-    // ----------------------------------------------------------
-
-    const sinaisMojibake = [
-      'Ã',
-      'Â',
-      'â',
-      'ð',
-      '�',
-    ];
-
     let atual = texto;
 
-    for (
-      let tentativa = 0;
-      tentativa < 3;
-      tentativa++
-    ) {
-      const pareceMojibake =
-        sinaisMojibake.some(
-          (sinal) =>
-            atual.includes(sinal)
-        );
-
-      if (
-        !pareceMojibake
-      ) {
-        break;
-      }
-
-      try {
-        const candidato =
-          Buffer.from(
-            atual,
-            'latin1'
-          ).toString(
-            'utf8'
-          );
-
-        // ------------------------------------------------------
-        // NÃO ACEITAR UMA CONVERSÃO QUE GERE �
-        // ------------------------------------------------------
-
-        if (
-          candidato.includes(
-            '\uFFFD'
-          )
-        ) {
-          break;
-        }
-
-        // ------------------------------------------------------
-        // SÓ CONTINUAR SE HOUVER MUDANÇA
-        // ------------------------------------------------------
-
-        if (
-          candidato === atual
-        ) {
-          break;
-        }
-
-        atual =
-          candidato;
-
-      } catch {
-        break;
-      }
-    }
-
     // ----------------------------------------------------------
-    // CORREÇÕES DIRETAS DE SEQUÊNCIAS COMUNS
+    // CORRIGIR APENAS MOJIBAKE CONHECIDO
     //
-    // Essas substituições funcionam como uma camada final de
-    // segurança para caracteres que podem permanecer após a
-    // conversão.
+    // IMPORTANTE:
+    // Não fazemos conversão global Latin-1 -> UTF-8.
+    // Isso evita modificar textos que já estão corretos.
     // ----------------------------------------------------------
 
     const correcoesDiretas: Array<
       [string, string]
     > = [
+      // --------------------------------------------------------
+      // LETRAS MINÚSCULAS
+      // --------------------------------------------------------
+
       ['Ã¡', 'á'],
       ['Ã©', 'é'],
       ['Ã­', 'í'],
@@ -471,6 +397,10 @@ async function startServer() {
 
       ['Ã§', 'ç'],
 
+      // --------------------------------------------------------
+      // LETRAS MAIÚSCULAS
+      // --------------------------------------------------------
+
       ['Ã‰', 'É'],
       ['Ã€', 'À'],
       ['Ã‚', 'Â'],
@@ -480,10 +410,18 @@ async function startServer() {
       ['Ãš', 'Ú'],
       ['Ã‡', 'Ç'],
 
+      // --------------------------------------------------------
+      // SÍMBOLOS
+      // --------------------------------------------------------
+
       ['Âº', 'º'],
       ['Âª', 'ª'],
       ['Â°', '°'],
       ['Â·', '·'],
+
+      // --------------------------------------------------------
+      // ASPAS E PONTUAÇÃO
+      // --------------------------------------------------------
 
       ['â€™', '’'],
       ['â€œ', '“'],
@@ -493,6 +431,10 @@ async function startServer() {
       ['â€¦', '…'],
       ['â€¢', '•'],
 
+      // --------------------------------------------------------
+      // EMOJIS COMUNS DA ALEX
+      // --------------------------------------------------------
+
       ['ðŸ˜Š', '😊'],
       ['ðŸ˜‚', '😂'],
       ['ðŸš€', '🚀'],
@@ -500,10 +442,15 @@ async function startServer() {
       ['ðŸŒ‰', '🌉'],
       ['ðŸ“„', '📄'],
       ['ðŸ“¥', '📥'],
+
       ['âœ…', '✅'],
       ['âš ï¸', '⚠️'],
       ['âŒ', '❌'],
     ];
+
+    // ----------------------------------------------------------
+    // APLICAR SOMENTE AS CORREÇÕES CONHECIDAS
+    // ----------------------------------------------------------
 
     for (
       const [
@@ -512,11 +459,103 @@ async function startServer() {
       ] of correcoesDiretas
     ) {
       atual =
-        atual.split(
-          errado
-        ).join(
-          correto
-        );
+        atual
+          .split(
+            errado
+          )
+          .join(
+            correto
+          );
+    }
+
+    // ----------------------------------------------------------
+    // CORRIGIR CASOS DE MOJIBAKE MAIS SIMPLES
+    //
+    // Faz no máximo duas passagens e somente se houver sinais
+    // claros de texto corrompido.
+    // ----------------------------------------------------------
+
+    const possuiSinaisMojibake = (
+      valor: string
+    ): boolean => {
+      return (
+        valor.includes('Ã') ||
+        valor.includes('Â') ||
+        valor.includes('â') ||
+        valor.includes('ð')
+      );
+    };
+
+    for (
+      let tentativa = 0;
+      tentativa < 2;
+      tentativa++
+    ) {
+      if (
+        !possuiSinaisMojibake(
+          atual
+        )
+      ) {
+        break;
+      }
+
+      try {
+        const candidato =
+          Buffer.from(
+            atual,
+            'latin1'
+          ).toString(
+            'utf8'
+          );
+
+        // ------------------------------------------------------
+        // NUNCA ACEITAR RESULTADO COM CARACTERE DE SUBSTITUIÇÃO
+        // ------------------------------------------------------
+
+        if (
+          candidato.includes(
+            '\uFFFD'
+          )
+        ) {
+          break;
+        }
+
+        // ------------------------------------------------------
+        // SÓ ACEITAR SE REALMENTE MELHORAR O TEXTO
+        // ------------------------------------------------------
+
+        if (
+          candidato === atual
+        ) {
+          break;
+        }
+
+        atual =
+          candidato;
+
+        // ------------------------------------------------------
+        // REAPLICAR CORREÇÕES DIRETAS
+        // ------------------------------------------------------
+
+        for (
+          const [
+            errado,
+            correto,
+          ] of correcoesDiretas
+        ) {
+          atual =
+            atual
+              .split(
+                errado
+              )
+              .join(
+                correto
+              );
+        }
+
+      } catch {
+        break;
+      }
     }
 
     // ----------------------------------------------------------
@@ -536,9 +575,6 @@ async function startServer() {
 
     // ----------------------------------------------------------
     // NORMALIZAÇÃO UNICODE
-    //
-    // NFC mantém caracteres como "é", "ã" e "ç" na forma
-    // Unicode normalizada.
     // ----------------------------------------------------------
 
     try {
@@ -547,7 +583,7 @@ async function startServer() {
           'NFC'
         );
     } catch {
-      // Mantém o texto caso normalize não esteja disponível.
+      // Mantém o texto original caso normalize não esteja disponível.
     }
 
     // ----------------------------------------------------------
@@ -555,7 +591,7 @@ async function startServer() {
     // ----------------------------------------------------------
 
     return atual;
-        }
+  }
   // ============================================================
   // STATUS
   // ============================================================
