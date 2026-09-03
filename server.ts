@@ -1027,14 +1027,42 @@ else:
     newContent: string;
     summary: string;
   } {
-    // Mantém o conteúdo como Unicode.
-    // A gravação UTF-8 é feita pelo fs.writeFileSync(..., 'utf8').
+    // ============================================================
+    // UTF-8 — NORMALIZAR ANTES DA TRANSFORMAÇÃO
+    // ============================================================
+    //
+    // Corrige casos como:
+    // você       -> você
+    // vocÃª      -> você
+    // está       -> está
+    // estÃ¡      -> está
+    // português  -> português
+    // portuguÃªs -> português
+    // ============================================================
 
     let modified =
-      String(originalContent ?? '');
+      corrigirTextoUTF8(
+        String(originalContent ?? '')
+      );
 
     const cleanInstruction =
-      String(instruction ?? '').trim();
+      corrigirTextoUTF8(
+        String(instruction ?? '')
+      ).trim();
+
+    const cleanSearchTarget =
+      typeof searchTarget === 'string'
+        ? corrigirTextoUTF8(
+            searchTarget
+          )
+        : searchTarget;
+
+    const cleanReplaceWith =
+      typeof replaceWith === 'string'
+        ? corrigirTextoUTF8(
+            replaceWith
+          )
+        : replaceWith;
 
     const summaryParts: string[] =
       [];
@@ -1044,32 +1072,32 @@ else:
     // ============================================================
 
     if (
-      searchTarget !==
+      cleanSearchTarget !==
         undefined &&
-      searchTarget.length > 0 &&
-      replaceWith !==
+      cleanSearchTarget.length > 0 &&
+      cleanReplaceWith !==
         undefined
     ) {
       if (
         modified.includes(
-          searchTarget
+          cleanSearchTarget
         )
       ) {
         modified =
           modified
             .split(
-              searchTarget
+              cleanSearchTarget
             )
             .join(
-              replaceWith
+              cleanReplaceWith
             );
 
         summaryParts.push(
-          `Substituição exata de '${searchTarget}' por '${replaceWith}'`
+          `Substituição exata de '${cleanSearchTarget}' por '${cleanReplaceWith}'`
         );
       } else {
         summaryParts.push(
-          `Aviso: alvo '${searchTarget}' não foi encontrado para substituição exata.`
+          `Aviso: alvo '${cleanSearchTarget}' não foi encontrado para substituição exata.`
         );
       }
     }
