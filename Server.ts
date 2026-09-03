@@ -2979,6 +2979,68 @@ else:
               finalTargetFilename
             );
         }
+        // ============================================================
+        // DIAGNÓSTICO UTF-8 — ANTES DE SALVAR PROCESSADO
+        // ============================================================
+
+        console.log(
+          '===== DIAGNÓSTICO UTF-8 — ANTES DE SALVAR ====='
+        );
+
+        console.log(
+          'newContent é string:',
+          typeof newContent === 'string'
+        );
+
+        console.log(
+         'newContent contém "você":',
+          newContent.includes('você')
+        );
+
+        console.log(
+          'newContent contém "vocÃª":',
+          newContent.includes('vocÃª')
+        );
+
+        console.log(
+          'newContent contém "português":',
+      ,   newContent.includes('português')
+        );
+
+        console.log(
+          'newContent contém "portuguÃªs":',
+          newContent.includes('portuguÃªs')
+        );
+
+        console.log(
+          'newContent contém "está":',
+          newContent.includes('está')
+        );
+
+        console.log(
+          'newContent contém "estÃ¡":',
+          newContent.includes('estÃ¡')
+        );
+
+        console.log(
+          'newContent preview:',
+          JSON.stringify(
+           newContent.slice(0, 500)
+          )
+        );
+
+        console.log(
+          'newContent bytes UTF-8:',
+          Buffer.byteLength(
+            newContent,
+            'utf8'
+          )
+        );
+
+        console.log(
+          '=============================================='
+        );
+        
 
         fs.writeFileSync(
           processedFilePath,
