@@ -2952,17 +2952,17 @@ else:
         );
 
         console.log(
-          'newContent contém "vocÃª":',
+         'newContent contém "vocÃª":',
           newContent.includes('vocÃª')
         );
 
         console.log(
-          'newContent contém "português":',
-      ,   newContent.includes('português')
+         'newContent contém "português":',
+          newContent.includes('português')
         );
 
         console.log(
-          'newContent contém "portuguÃªs":',
+         'newContent contém "portuguÃªs":',
           newContent.includes('portuguÃªs')
         );
 
