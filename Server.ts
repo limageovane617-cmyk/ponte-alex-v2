@@ -3642,6 +3642,278 @@ else:
       }
     }
   );
+  // ============================================================
+  // WAN 2.2 + COMFYUI — INTEGRAÇÃO ISOLADA
+  // ============================================================
+
+  app.post('/api/ponte/v2/wan', async (req, res) => {
+    try {
+      const configuredSecret = getSystemConfiguredSecret();
+
+      if (configuredSecret) {
+        const providedSecret = extractProvidedSecret(req);
+
+        if (providedSecret !== configuredSecret) {
+          return res.status(401).json({
+            success: false,
+            error: 'Não autorizado.'
+          });
+        }
+      }
+
+      const comfyUrl = process.env.COMFYUI_URL?.trim();
+
+      if (!comfyUrl) {
+        return res.status(503).json({
+          success: false,
+          error: 'COMFYUI_URL não configurada na Ponte.'
+        });
+      }
+
+      const workflow = req.body?.workflow;
+
+      if (!workflow || typeof workflow !== 'object') {
+        return res.status(400).json({
+          success: false,
+          error: 'Workflow do ComfyUI não informado.'
+        });
+      }
+
+      const filenameBase =
+        String(req.body?.filename || `wan_${Date.now()}`)
+          .replace(/[^a-zA-Z0-9._-]/g, '_');
+
+      console.log('[WAN] Enviando workflow para ComfyUI...');
+
+      const promptResponse = await fetch(
+        `${comfyUrl.replace(/\/$/, '')}/prompt`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            prompt: workflow
+          })
+        }
+      );
+
+      if (!promptResponse.ok) {
+        const errorText = await promptResponse.text();
+
+        return res.status(502).json({
+          success: false,
+          error: 'ComfyUI recusou o workflow.',
+          details: errorText
+        });
+      }
+
+      const promptData = await promptResponse.json();
+      const promptId = promptData.prompt_id;
+
+      if (!promptId) {
+        return res.status(502).json({
+          success: false,
+          error: 'ComfyUI não retornou prompt_id.'
+        });
+      }
+
+      console.log(`[WAN] prompt_id: ${promptId}`);
+
+      const timeoutMs =
+        Number(process.env.WAN_TIMEOUT_MS || 600000);
+
+      const inicio = Date.now();
+
+      let historyData: any = null;
+
+      while (Date.now() - inicio < timeoutMs) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        const historyResponse = await fetch(
+          `${comfyUrl.replace(/\/$/, '')}/history/${promptId}`
+        );
+
+        if (!historyResponse.ok) {
+          continue;
+        }
+
+        const history = await historyResponse.json();
+
+        if (history?.[promptId]) {
+          historyData = history[promptId];
+
+          const outputs = historyData.outputs || {};
+
+          let videoOutput: any = null;
+
+          for (const nodeId of Object.keys(outputs)) {
+            const nodeOutput = outputs[nodeId];
+
+            if (nodeOutput?.videos?.length) {
+              videoOutput = nodeOutput.videos[0];
+              break;
+            }
+
+            if (nodeOutput?.gifs?.length) {
+              videoOutput = nodeOutput.gifs[0];
+              break;
+            }
+          }
+
+          if (videoOutput) {
+            console.log('[WAN] Vídeo encontrado no ComfyUI.');
+
+            const params = new URLSearchParams({
+              filename: String(videoOutput.filename),
+              subfolder: String(videoOutput.subfolder || ''),
+              type: String(videoOutput.type || 'output')
+            });
+
+            const videoResponse = await fetch(
+              `${comfyUrl.replace(/\/$/, '')}/view?${params.toString()}`
+            );
+
+            if (!videoResponse.ok) {
+              return res.status(502).json({
+                success: false,
+                error: 'Não foi possível baixar o vídeo do ComfyUI.'
+              });
+            }
+
+            const videoBuffer = Buffer.from(
+              await videoResponse.arrayBuffer()
+            );
+
+            const safeFilename =
+              `${filenameBase}.mp4`;
+
+            const outputPath =
+              path.join(videosDir, safeFilename);
+
+            fs.writeFileSync(outputPath, videoBuffer);
+
+            console.log(
+              `[WAN] Vídeo salvo em: ${outputPath}`
+            );
+
+            return res.json({
+              success: true,
+              motor: 'Wan 2.2 + ComfyUI',
+              promptId,
+              video: {
+                filename: safeFilename,
+                size: videoBuffer.length,
+                path: outputPath,
+                downloadUrl:
+                  `/api/download/videos/${encodeURIComponent(safeFilename)}`
+              },
+              comfyui: videoOutput
+            });
+          }
+
+          if (historyData?.status?.status_str === 'error') {
+            return res.status(502).json({
+              success: false,
+              error: 'ComfyUI informou erro ao gerar o vídeo.',
+              promptId,
+              details: historyData.status
+            });
+          }
+        }
+      }
+
+      return res.status(504).json({
+        success: false,
+        error: 'Tempo limite excedido aguardando o Wan 2.2.',
+        promptId
+      });
+
+    } catch (error: any) {
+      console.error('[WAN] Erro:', error);
+
+      return res.status(500).json({
+        success: false,
+        error: 'Erro interno na integração Wan/ComfyUI.',
+        details: error?.message || String(error)
+      });
+    }
+  });
+
+
+  // ============================================================
+  // DOWNLOAD DOS VÍDEOS GERADOS PELO WAN
+  // ============================================================
+
+  app.get('/api/download/videos/:filename', (req, res) => {
+    try {
+      const filename = path.basename(req.params.filename);
+      const filePath = path.join(videosDir, filename);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({
+          success: false,
+          error: 'Vídeo não encontrado.'
+        });
+      }
+
+      return res.download(filePath);
+    } catch (error: any) {
+      console.error('[WAN DOWNLOAD] Erro:', error);
+
+      return res.status(500).json({
+        success: false,
+        error: 'Erro ao baixar vídeo.'
+      });
+    }
+  });
+
+
+  // ============================================================
+  // STATUS DO COMFYUI / WAN
+  // ============================================================
+
+  app.get('/api/ponte/v2/wan/status', async (_req, res) => {
+    try {
+      const comfyUrl = process.env.COMFYUI_URL?.trim();
+
+      if (!comfyUrl) {
+        return res.json({
+          success: false,
+          available: false,
+          error: 'COMFYUI_URL não configurada.'
+        });
+      }
+
+      const response = await fetch(
+        `${comfyUrl.replace(/\/$/, '')}/system_stats`
+      );
+
+      if (!response.ok) {
+        return res.json({
+          success: false,
+          available: false,
+          error: 'ComfyUI não respondeu.'
+        });
+      }
+
+      const systemStats = await response.json();
+
+      return res.json({
+        success: true,
+        available: true,
+        motor: 'Wan 2.2 + ComfyUI',
+        comfyui: systemStats
+      });
+
+    } catch (error: any) {
+      return res.json({
+        success: false,
+        available: false,
+        error: error?.message || String(error)
+      });
+    }
+  });
   
   // ============================================================
   // START SERVER
