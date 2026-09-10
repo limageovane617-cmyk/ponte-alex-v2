@@ -53,9 +53,15 @@ async function startServer() {
     'storage',
     'processed'
   );
+  const videosDir = path.join(
+    process.cwd(),
+    'storage',
+    'videos'
+  );
 
   fs.mkdirSync(originalsDir, { recursive: true });
   fs.mkdirSync(processedDir, { recursive: true });
+  fs.mkdirSync(videosDir, { recursive: true });
 
   // ============================================================
   // HELPERS
