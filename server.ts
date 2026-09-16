@@ -316,6 +316,61 @@ async function startServer() {
       ''
     ).trim();
   }
+  // ============================================================
+  // 🔐 TESTE DE CONEXÃO — PONTE → ULTRA
+  // ============================================================
+
+  app.get('/api/ultra/test', async (_req, res) => {
+    const ultraSecret = (
+      process.env.ULTRA_API_SECRET ||
+      ''
+    ).trim();
+
+    if (!ultraSecret) {
+      return res.status(503).json({
+        success: false,
+        error: 'ULTRA_API_SECRET não configurado na Ponte.',
+      });
+    }
+
+    try {
+      const resposta = await fetch(
+        'https://ultra-ia-pro.onrender.com/api/ultra/ping',
+        {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'x-api-secret': ultraSecret,
+          },
+        }
+      );
+
+      const texto = await resposta.text();
+
+      let dados: unknown;
+
+      try {
+        dados = JSON.parse(texto);
+      } catch {
+        dados = {
+          raw: texto,
+        };
+      }
+
+      return res.status(resposta.status).json({
+        success: resposta.ok,
+        ponte: true,
+        ultra: dados,
+      });
+    } catch (erro: any) {
+      return res.status(502).json({
+        success: false,
+        ponte: true,
+        ultra: false,
+        error: erro?.message || 'Falha ao conectar ao ULTRA.',
+      });
+    }
+  });
 
   function isInsideDirectory(
     filePath: string,
