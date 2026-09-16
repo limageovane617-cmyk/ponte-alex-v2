@@ -53,9 +53,15 @@ async function startServer() {
     'storage',
     'processed'
   );
+  const videosDir = path.join(
+    process.cwd(),
+    'storage',
+    'videos'
+  );
 
   fs.mkdirSync(originalsDir, { recursive: true });
   fs.mkdirSync(processedDir, { recursive: true });
+  fs.mkdirSync(videosDir, { recursive: true });
 
   // ============================================================
   // HELPERS
@@ -343,16 +349,12 @@ async function startServer() {
   }
 
   // ============================================================
-  // UTF-8 — CORREÇÃO ROBUSTA DE MOJIBAKE
+  // UTF-8 — CORREÇÃO SEGURA DE MOJIBAKE
   // ============================================================
 
   function corrigirTextoUTF8(
     texto: unknown
   ): string {
-    // ----------------------------------------------------------
-    // GARANTIR STRING
-    // ----------------------------------------------------------
-
     if (
       typeof texto !== 'string'
     ) {
@@ -365,43 +367,35 @@ async function startServer() {
       return '';
     }
 
-    // ----------------------------------------------------------
-    // CORRIGIR MOJIBAKE REPETIDAMENTE
-    //
-    // Exemplos:
-    // vocÃª        -> você
-    // estÃ¡        -> está
-    // modificaÃ§Ã£o -> modificação
-    // portuguÃªs   -> português
-    // OlÃ¡         -> Olá
-    //
-    // O loop permite corrigir casos em que o texto foi
-    // codificado/decodificado incorretamente mais de uma vez.
-    // ----------------------------------------------------------
-
-    const sinaisMojibake = [
-      'Ã',
-      'Â',
-      'â',
-      'ð',
-      '�',
-    ];
-
     let atual = texto;
+
+    // ----------------------------------------------------------
+    // Detecta somente padrões típicos de UTF-8 interpretado
+    // incorretamente como Latin-1/Windows-1252.
+    // ----------------------------------------------------------
+
+    const pareceMojibake =
+      (valor: string): boolean => {
+        return (
+          valor.includes('Ã') ||
+          valor.includes('Â') ||
+          valor.includes('â€') ||
+          valor.includes('ðŸ') ||
+          valor.includes('�')
+        );
+      };
+
+    // ----------------------------------------------------------
+    // Corrige no máximo duas camadas de dupla interpretação.
+    // ----------------------------------------------------------
 
     for (
       let tentativa = 0;
-      tentativa < 3;
+      tentativa < 2;
       tentativa++
     ) {
-      const pareceMojibake =
-        sinaisMojibake.some(
-          (sinal) =>
-            atual.includes(sinal)
-        );
-
       if (
-        !pareceMojibake
+        !pareceMojibake(atual)
       ) {
         break;
       }
@@ -415,10 +409,8 @@ async function startServer() {
             'utf8'
           );
 
-        // ------------------------------------------------------
-        // NÃO ACEITAR UMA CONVERSÃO QUE GERE �
-        // ------------------------------------------------------
-
+        // Nunca aceitar uma conversão que introduza
+        // caracteres de substituição Unicode.
         if (
           candidato.includes(
             '\uFFFD'
@@ -427,10 +419,7 @@ async function startServer() {
           break;
         }
 
-        // ------------------------------------------------------
-        // SÓ CONTINUAR SE HOUVER MUDANÇA
-        // ------------------------------------------------------
-
+        // Só aceitar se realmente melhorar o texto.
         if (
           candidato === atual
         ) {
@@ -439,71 +428,51 @@ async function startServer() {
 
         atual =
           candidato;
-
       } catch {
         break;
       }
     }
 
     // ----------------------------------------------------------
-    // CORREÇÕES DIRETAS DE SEQUÊNCIAS COMUNS
-    //
-    // Essas substituições funcionam como uma camada final de
-    // segurança para caracteres que podem permanecer após a
-    // conversão.
+    // Correções pontuais para sequências conhecidas que podem
+    // permanecer depois da conversão.
     // ----------------------------------------------------------
 
-    const correcoesDiretas: Array<
-      [string, string]
-    > = [
-      ['Ã¡', 'á'],
-      ['Ã©', 'é'],
-      ['Ã­', 'í'],
-      ['Ã³', 'ó'],
-      ['Ãº', 'ú'],
+    const correcoesDiretas:
+      Array<[string, string]> = [
+        ['Ã¡', 'á'],
+        ['Ã©', 'é'],
+        ['Ã­', 'í'],
+        ['Ã³', 'ó'],
+        ['Ãº', 'ú'],
+        ['Ã£', 'ã'],
+        ['Ãµ', 'õ'],
+        ['Ã¢', 'â'],
+        ['Ãª', 'ê'],
+        ['Ã´', 'ô'],
+        ['Ã§', 'ç'],
 
-      ['Ã ', 'à'],
-      ['Ã£', 'ã'],
-      ['Ãµ', 'õ'],
-      ['Ã¢', 'â'],
-      ['Ãª', 'ê'],
-      ['Ã´', 'ô'],
+        ['Ã€', 'À'],
+        ['Ã‰', 'É'],
+        ['ÃŠ', 'Ê'],
+        ['Ã“', 'Ó'],
+        ['Ã”', 'Ô'],
+        ['Ãš', 'Ú'],
+        ['Ã‡', 'Ç'],
 
-      ['Ã§', 'ç'],
+        ['Âº', 'º'],
+        ['Âª', 'ª'],
+        ['Â°', '°'],
+        ['Â·', '·'],
 
-      ['Ã‰', 'É'],
-      ['Ã€', 'À'],
-      ['Ã‚', 'Â'],
-      ['ÃŠ', 'Ê'],
-      ['Ã“', 'Ó'],
-      ['Ã”', 'Ô'],
-      ['Ãš', 'Ú'],
-      ['Ã‡', 'Ç'],
-
-      ['Âº', 'º'],
-      ['Âª', 'ª'],
-      ['Â°', '°'],
-      ['Â·', '·'],
-
-      ['â€™', '’'],
-      ['â€œ', '“'],
-      ['â€', '”'],
-      ['â€“', '–'],
-      ['â€”', '—'],
-      ['â€¦', '…'],
-      ['â€¢', '•'],
-
-      ['ðŸ˜Š', '😊'],
-      ['ðŸ˜‚', '😂'],
-      ['ðŸš€', '🚀'],
-      ['ðŸ¤–', '🤖'],
-      ['ðŸŒ‰', '🌉'],
-      ['ðŸ“„', '📄'],
-      ['ðŸ“¥', '📥'],
-      ['âœ…', '✅'],
-      ['âš ï¸', '⚠️'],
-      ['âŒ', '❌'],
-    ];
+        ['â€™', '’'],
+        ['â€œ', '“'],
+        ['â€', '”'],
+        ['â€“', '–'],
+        ['â€”', '—'],
+        ['â€¦', '…'],
+        ['â€¢', '•'],
+      ];
 
     for (
       const [
@@ -512,15 +481,13 @@ async function startServer() {
       ] of correcoesDiretas
     ) {
       atual =
-        atual.split(
-          errado
-        ).join(
-          correto
-        );
+        atual
+          .split(errado)
+          .join(correto);
     }
 
     // ----------------------------------------------------------
-    // NORMALIZAR QUEBRAS DE LINHA
+    // Normalizar quebras de linha.
     // ----------------------------------------------------------
 
     atual =
@@ -535,10 +502,7 @@ async function startServer() {
         );
 
     // ----------------------------------------------------------
-    // NORMALIZAÇÃO UNICODE
-    //
-    // NFC mantém caracteres como "é", "ã" e "ç" na forma
-    // Unicode normalizada.
+    // Normalização Unicode NFC.
     // ----------------------------------------------------------
 
     try {
@@ -550,12 +514,8 @@ async function startServer() {
       // Mantém o texto caso normalize não esteja disponível.
     }
 
-    // ----------------------------------------------------------
-    // RETORNO FINAL
-    // ----------------------------------------------------------
-
     return atual;
-        }
+  }
   // ============================================================
   // STATUS
   // ============================================================
@@ -2979,6 +2939,68 @@ else:
               finalTargetFilename
             );
         }
+        // ============================================================
+        // DIAGNÓSTICO UTF-8 — ANTES DE SALVAR PROCESSADO
+        // ============================================================
+
+        console.log(
+          '===== DIAGNÓSTICO UTF-8 — ANTES DE SALVAR ====='
+        );
+
+        console.log(
+          'newContent é string:',
+          typeof newContent === 'string'
+        );
+
+        console.log(
+         'newContent contém "você":',
+          newContent.includes('você')
+        );
+
+        console.log(
+         'newContent contém "vocÃª":',
+          newContent.includes('vocÃª')
+        );
+
+        console.log(
+         'newContent contém "português":',
+          newContent.includes('português')
+        );
+
+        console.log(
+         'newContent contém "portuguÃªs":',
+          newContent.includes('portuguÃªs')
+        );
+
+        console.log(
+          'newContent contém "está":',
+          newContent.includes('está')
+        );
+
+        console.log(
+          'newContent contém "estÃ¡":',
+          newContent.includes('estÃ¡')
+        );
+
+        console.log(
+          'newContent preview:',
+          JSON.stringify(
+           newContent.slice(0, 500)
+          )
+        );
+
+        console.log(
+          'newContent bytes UTF-8:',
+          Buffer.byteLength(
+            newContent,
+            'utf8'
+          )
+        );
+
+        console.log(
+          '=============================================='
+        );
+        
 
         fs.writeFileSync(
           processedFilePath,
@@ -3620,6 +3642,278 @@ else:
       }
     }
   );
+  // ============================================================
+  // WAN 2.2 + COMFYUI — INTEGRAÇÃO ISOLADA
+  // ============================================================
+
+  app.post('/api/ponte/v2/wan', async (req, res) => {
+    try {
+      const configuredSecret = getSystemConfiguredSecret();
+
+      if (configuredSecret) {
+        const providedSecret = extractProvidedSecret(req);
+
+        if (providedSecret !== configuredSecret) {
+          return res.status(401).json({
+            success: false,
+            error: 'Não autorizado.'
+          });
+        }
+      }
+
+      const comfyUrl = process.env.COMFYUI_URL?.trim();
+
+      if (!comfyUrl) {
+        return res.status(503).json({
+          success: false,
+          error: 'COMFYUI_URL não configurada na Ponte.'
+        });
+      }
+
+      const workflow = req.body?.workflow;
+
+      if (!workflow || typeof workflow !== 'object') {
+        return res.status(400).json({
+          success: false,
+          error: 'Workflow do ComfyUI não informado.'
+        });
+      }
+
+      const filenameBase =
+        String(req.body?.filename || `wan_${Date.now()}`)
+          .replace(/[^a-zA-Z0-9._-]/g, '_');
+
+      console.log('[WAN] Enviando workflow para ComfyUI...');
+
+      const promptResponse = await fetch(
+        `${comfyUrl.replace(/\/$/, '')}/prompt`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            prompt: workflow
+          })
+        }
+      );
+
+      if (!promptResponse.ok) {
+        const errorText = await promptResponse.text();
+
+        return res.status(502).json({
+          success: false,
+          error: 'ComfyUI recusou o workflow.',
+          details: errorText
+        });
+      }
+
+      const promptData = await promptResponse.json();
+      const promptId = promptData.prompt_id;
+
+      if (!promptId) {
+        return res.status(502).json({
+          success: false,
+          error: 'ComfyUI não retornou prompt_id.'
+        });
+      }
+
+      console.log(`[WAN] prompt_id: ${promptId}`);
+
+      const timeoutMs =
+        Number(process.env.WAN_TIMEOUT_MS || 600000);
+
+      const inicio = Date.now();
+
+      let historyData: any = null;
+
+      while (Date.now() - inicio < timeoutMs) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        const historyResponse = await fetch(
+          `${comfyUrl.replace(/\/$/, '')}/history/${promptId}`
+        );
+
+        if (!historyResponse.ok) {
+          continue;
+        }
+
+        const history = await historyResponse.json();
+
+        if (history?.[promptId]) {
+          historyData = history[promptId];
+
+          const outputs = historyData.outputs || {};
+
+          let videoOutput: any = null;
+
+          for (const nodeId of Object.keys(outputs)) {
+            const nodeOutput = outputs[nodeId];
+
+            if (nodeOutput?.videos?.length) {
+              videoOutput = nodeOutput.videos[0];
+              break;
+            }
+
+            if (nodeOutput?.gifs?.length) {
+              videoOutput = nodeOutput.gifs[0];
+              break;
+            }
+          }
+
+          if (videoOutput) {
+            console.log('[WAN] Vídeo encontrado no ComfyUI.');
+
+            const params = new URLSearchParams({
+              filename: String(videoOutput.filename),
+              subfolder: String(videoOutput.subfolder || ''),
+              type: String(videoOutput.type || 'output')
+            });
+
+            const videoResponse = await fetch(
+              `${comfyUrl.replace(/\/$/, '')}/view?${params.toString()}`
+            );
+
+            if (!videoResponse.ok) {
+              return res.status(502).json({
+                success: false,
+                error: 'Não foi possível baixar o vídeo do ComfyUI.'
+              });
+            }
+
+            const videoBuffer = Buffer.from(
+              await videoResponse.arrayBuffer()
+            );
+
+            const safeFilename =
+              `${filenameBase}.mp4`;
+
+            const outputPath =
+              path.join(videosDir, safeFilename);
+
+            fs.writeFileSync(outputPath, videoBuffer);
+
+            console.log(
+              `[WAN] Vídeo salvo em: ${outputPath}`
+            );
+
+            return res.json({
+              success: true,
+              motor: 'Wan 2.2 + ComfyUI',
+              promptId,
+              video: {
+                filename: safeFilename,
+                size: videoBuffer.length,
+                path: outputPath,
+                downloadUrl:
+                  `/api/download/videos/${encodeURIComponent(safeFilename)}`
+              },
+              comfyui: videoOutput
+            });
+          }
+
+          if (historyData?.status?.status_str === 'error') {
+            return res.status(502).json({
+              success: false,
+              error: 'ComfyUI informou erro ao gerar o vídeo.',
+              promptId,
+              details: historyData.status
+            });
+          }
+        }
+      }
+
+      return res.status(504).json({
+        success: false,
+        error: 'Tempo limite excedido aguardando o Wan 2.2.',
+        promptId
+      });
+
+    } catch (error: any) {
+      console.error('[WAN] Erro:', error);
+
+      return res.status(500).json({
+        success: false,
+        error: 'Erro interno na integração Wan/ComfyUI.',
+        details: error?.message || String(error)
+      });
+    }
+  });
+
+
+  // ============================================================
+  // DOWNLOAD DOS VÍDEOS GERADOS PELO WAN
+  // ============================================================
+
+  app.get('/api/download/videos/:filename', (req, res) => {
+    try {
+      const filename = path.basename(req.params.filename);
+      const filePath = path.join(videosDir, filename);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({
+          success: false,
+          error: 'Vídeo não encontrado.'
+        });
+      }
+
+      return res.download(filePath);
+    } catch (error: any) {
+      console.error('[WAN DOWNLOAD] Erro:', error);
+
+      return res.status(500).json({
+        success: false,
+        error: 'Erro ao baixar vídeo.'
+      });
+    }
+  });
+
+
+  // ============================================================
+  // STATUS DO COMFYUI / WAN
+  // ============================================================
+
+  app.get('/api/ponte/v2/wan/status', async (_req, res) => {
+    try {
+      const comfyUrl = process.env.COMFYUI_URL?.trim();
+
+      if (!comfyUrl) {
+        return res.json({
+          success: false,
+          available: false,
+          error: 'COMFYUI_URL não configurada.'
+        });
+      }
+
+      const response = await fetch(
+        `${comfyUrl.replace(/\/$/, '')}/system_stats`
+      );
+
+      if (!response.ok) {
+        return res.json({
+          success: false,
+          available: false,
+          error: 'ComfyUI não respondeu.'
+        });
+      }
+
+      const systemStats = await response.json();
+
+      return res.json({
+        success: true,
+        available: true,
+        motor: 'Wan 2.2 + ComfyUI',
+        comfyui: systemStats
+      });
+
+    } catch (error: any) {
+      return res.json({
+        success: false,
+        available: false,
+        error: error?.message || String(error)
+      });
+    }
+  });
   
   // ============================================================
   // START SERVER
