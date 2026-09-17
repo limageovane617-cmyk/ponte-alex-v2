@@ -372,6 +372,115 @@ async function startServer() {
     }
   });
 
+  // ============================================================
+  // 🧠 CHAT — PONTE → ULTRA
+  // ============================================================
+
+  app.post('/api/ultra/chat', async (req, res) => {
+    // ----------------------------------------------------------
+    // 1. Verifica o segredo da Ponte
+    // ----------------------------------------------------------
+
+    const ponteSecret = getSystemConfiguredSecret();
+
+    if (!ponteSecret) {
+      return res.status(503).json({
+        success: false,
+        error: 'PONTE_API_SECRET não configurado na Ponte.',
+      });
+    }
+
+    const secretRecebido = extractProvidedSecret(req);
+
+    if (secretRecebido !== ponteSecret) {
+      return res.status(401).json({
+        success: false,
+        error: 'Segredo da Ponte inválido.',
+      });
+    }
+
+    // ----------------------------------------------------------
+    // 2. Obtém a pergunta
+    // ----------------------------------------------------------
+
+    const pergunta =
+      typeof req.body?.pergunta === 'string'
+        ? req.body.pergunta.trim()
+        : '';
+
+    if (!pergunta) {
+      return res.status(400).json({
+        success: false,
+        error: 'Campo "pergunta" é obrigatório.',
+      });
+    }
+
+    // ----------------------------------------------------------
+    // 3. Obtém o segredo para comunicação com a ULTRA
+    // ----------------------------------------------------------
+
+    const ultraSecret = (
+      process.env.ULTRA_API_SECRET ||
+      ''
+    ).trim();
+
+    if (!ultraSecret) {
+      return res.status(503).json({
+        success: false,
+        error: 'ULTRA_API_SECRET não configurado na Ponte.',
+      });
+    }
+
+    // ----------------------------------------------------------
+    // 4. Ponte → ULTRA
+    // ----------------------------------------------------------
+
+    try {
+      const resposta = await fetch(
+        'https://ultra-ia-pro.onrender.com/api/chat',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'x-api-secret': ultraSecret,
+          },
+          body: JSON.stringify({
+            pergunta,
+          }),
+        }
+      );
+
+      const texto = await resposta.text();
+
+      let dados: unknown;
+
+      try {
+        dados = JSON.parse(texto);
+      } catch {
+        dados = {
+          raw: texto,
+        };
+      }
+
+      return res.status(resposta.status).json({
+        success: resposta.ok,
+        ponte: true,
+        ultra: dados,
+      });
+
+    } catch (erro: any) {
+      return res.status(502).json({
+        success: false,
+        ponte: true,
+        ultra: false,
+        error:
+          erro?.message ||
+          'Falha ao conectar ao endpoint de chat da ULTRA.',
+      });
+    }
+  });
+
   function isInsideDirectory(
     filePath: string,
     directory: string
