@@ -437,7 +437,7 @@ async function startServer() {
 
     try {
       const resposta = await fetch(
-        'https://ultra-ia-pro.onrender.com/api/chat',
+       'https://ultra-ia-pro.onrender.com/api/ultra/chat',
         {
           method: 'POST',
           headers: {
